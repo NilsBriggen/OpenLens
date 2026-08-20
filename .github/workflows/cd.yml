@@ -1,0 +1,184 @@
+name: OpenLens CD
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      force:
+        description: 'Force deployment even if tests fail'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOCKER_COMPOSE_VERSION: '2.24.5'
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'staging'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v${{ env.DOCKER_COMPOSE_VERSION }}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+      - name: Pull latest images
+        run: |
+          docker-compose -f docker-compose.yml pull
+      
+      - name: Start staging services
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+      
+      - name: Run health checks
+        run: |
+          sleep 30
+          docker-compose -f docker-compose.yml -f docker-compose.staging.yml exec backend curl -f http://localhost:5000/health || exit 1
+          docker-compose -f docker-compose.yml -f docker-compose.staging.yml exec frontend curl -f http://localhost || exit 1
+      
+      - name: Run smoke tests
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.staging.yml exec backend python -m pytest tests/test_health.py -v
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production'
+    needs: [deploy-staging]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v${{ env.DOCKER_COMPOSE_VERSION }}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+      - name: Pull latest images
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml pull
+      
+      - name: Stop production services
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml down
+      
+      - name: Backup production data
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml exec postgres pg_dump -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }} > backup_$(date +%Y%m%d_%H%M%S).sql
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml exec redis redis-cli SAVE
+      
+      - name: Start production services
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+      
+      - name: Wait for services to start
+        run: |
+          for i in {1..30}; do
+            if docker-compose -f docker-compose.yml -f docker-compose.production.yml exec postgres pg_isready -U ${{ secrets.POSTGRES_USER }}; then
+              break
+            fi
+            sleep 10
+          done
+          for i in {1..30}; do
+            if docker-compose -f docker-compose.yml -f docker-compose.production.yml exec backend curl -f http://localhost:5000/health; then
+              break
+            fi
+            sleep 10
+          done
+      
+      - name: Run database migrations
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml exec backend python -c "from database.postgres_db import Base, get_db; Base.metadata.create_all(get_db().engine)"
+      
+      - name: Run health checks
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml exec backend curl -f http://localhost:5000/health || exit 1
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml exec frontend curl -f http://localhost || exit 1
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml exec postgres pg_isready -U ${{ secrets.POSTGRES_USER }} || exit 1
+      
+      - name: Run smoke tests
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml exec backend python -m pytest tests/test_health.py tests/test_auth.py -v
+      
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "Deployment to production successful!"
+      
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "Deployment to production failed!"
+
+  rollback-production:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    if: failure() && github.event.inputs.environment == 'production'
+    needs: [deploy-production]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v${{ env.DOCKER_COMPOSE_VERSION }}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+      
+      - name: Stop production services
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml down
+      
+      - name: Restore from backup
+        run: |
+          BACKUP_FILE=$(ls -t backup_*.sql | head -1)
+          cat $BACKUP_FILE | docker-compose -f docker-compose.yml -f docker-compose.production.yml exec -T postgres psql -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }}
+          docker-compose -f docker-compose.yml -f docker-compose.production.yml up -d
+      
+      - name: Notify rollback
+        run: |
+          echo "Production rollback completed!"
+
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    if: always() && github.ref == 'refs/heads/main'
+    needs: [deploy-staging, deploy-production]
+    
+    steps:
+      - name: Remove old images
+        run: |
+          docker system prune -f
+      
+      - name: Remove old backups
+        run: |
+          find . -name "backup_*.sql" -mtime +7 -delete
