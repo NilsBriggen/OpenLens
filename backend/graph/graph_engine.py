@@ -24,14 +24,24 @@ from collections import defaultdict
 import hashlib
 import uuid
 
-# Try to import Neo4j driver
+# Try to import Neo4j driver.
+# Note: BoltStatementResult existed only in the 1.x driver; importing it made
+# this module report "driver not available" against every modern driver.
 try:
-    from neo4j import GraphDatabase, BoltStatementResult, Record, Session, Transaction
+    from neo4j import GraphDatabase, Record, Session
+    from neo4j import graph as neo4j_graph
     from neo4j.exceptions import Neo4jError, ServiceUnavailable
     NEO4J_AVAILABLE = True
 except ImportError:
     NEO4J_AVAILABLE = False
     print("Neo4j driver not available. Install with: pip install neo4j")
+
+# Try to import networkx (used by to_networkx)
+try:
+    import networkx as nx
+    NETWORKX_AVAILABLE = True
+except ImportError:
+    NETWORKX_AVAILABLE = False
 
 
 @dataclass
@@ -89,15 +99,19 @@ class GraphResult:
     """Represents a graph query result."""
     nodes: List[Node] = field(default_factory=list)
     relationships: List[Relationship] = field(default_factory=list)
+    # Full row data for every record, so scalars, maps and aggregates survive.
+    # Without this, `RETURN count(n)` and `CALL db.labels()` come back empty.
+    records: List[Dict[str, Any]] = field(default_factory=list)
     query: str = ""
     execution_time: float = 0.0
     stats: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
             'nodes': [n.to_dict() for n in self.nodes],
             'relationships': [r.to_dict() for r in self.relationships],
+            'records': self.records,
             'query': self.query,
             'execution_time': self.execution_time,
             'stats': self.stats,
@@ -323,14 +337,14 @@ class CypherQueryBuilder:
         query = "\n".join(self.clauses)
         return query, self.params
     
-    def execute(self, session: Session = None) -> Optional[BoltStatementResult]:
+    def execute(self, session: "Session" = None) -> Optional[Any]:
         """Execute the query."""
         if not NEO4J_AVAILABLE:
             return None
-        
+
         query, params = self.build()
         if session:
-            return session.run(query, **params)
+            return session.run(query, parameters=params)
         return None
 
 
@@ -356,11 +370,22 @@ class GraphEngine:
             user: Neo4j username.
             password: Neo4j password.
         """
-        self.uri = uri or os.getenv('NEO4J_URI', 'bolt://localhost:7687')
-        self.user = user or os.getenv('NEO4J_USERNAME', 'neo4j')
-        self.password = password or os.getenv('NEO4J_PASSWORD', 'password')
-        
-        self.driver = None
+        if uri is None or user is None or password is None:
+            from backend.config import neo4j_settings
+            settings = neo4j_settings()
+            uri = uri or settings['uri']
+            user = user or settings['user']
+            password = password or settings['password']
+
+        self.uri = uri
+        self.user = user
+        self.password = password
+
+        self._driver = None
+        self._last_connect_failure = 0.0
+        self._connect_retry_interval = 30.0  # seconds between reconnect attempts
+        self._nx_cache: Optional[Tuple[float, Any]] = None
+        self._nx_cache_ttl = 300.0  # seconds
         self._session_pool = []
         self._lock = threading.Lock()
         self._query_cache: Dict[str, Tuple[str, Dict]] = {}
@@ -372,49 +397,77 @@ class GraphEngine:
             'cache_hits': 0,
             'cache_misses': 0,
         }
-        
-        self._initialize()
-    
-    def _initialize(self):
-        """Initialize the Neo4j driver."""
+        # Deliberately no connection attempt here: importing this module must
+        # not open a socket. The driver connects lazily on first use.
+
+    @property
+    def driver(self):
+        """The Neo4j driver, connecting lazily on first access."""
+        self._ensure_driver()
+        return self._driver
+
+    @driver.setter
+    def driver(self, value):
+        self._driver = value
+
+    def _ensure_driver(self) -> bool:
+        """
+        Idempotently construct and verify the Neo4j driver.
+
+        Retries after a failure at most every _connect_retry_interval seconds,
+        so a down database costs one short timeout per interval rather than one
+        per call.
+        """
+        if self._driver is not None:
+            return True
         if not NEO4J_AVAILABLE:
-            return
-        
-        try:
-            self.driver = GraphDatabase.driver(
-                self.uri,
-                auth=(self.user, self.password),
-                max_connection_lifetime=30 * 60,  # 30 minutes
-                max_connection_pool_size=50,
-                connection_timeout=30,
-                encrypted=True,
-                trust=TRUST_ALL_CERTIFICATES if os.getenv('NEO4J_TRUST_ALL', 'false').lower() == 'true' else TRUST_SYSTEM_CA_SIGNED_CERTIFICATES,
-            )
-            
-            # Verify connection
-            self.verify_connection()
-            
-            print(f"Connected to Neo4j at {self.uri}")
-        except Exception as e:
-            print(f"Failed to connect to Neo4j: {e}")
-            self.driver = None
-    
+            return False
+        if time.time() - self._last_connect_failure < self._connect_retry_interval:
+            return False
+
+        with self._lock:
+            if self._driver is not None:
+                return True
+            try:
+                # No encrypted=/trust= settings: encryption is selected by the
+                # URI scheme (bolt+s://, neo4j+s://); forcing encrypted=True on
+                # plain bolt:// fails the handshake against a default container.
+                driver = GraphDatabase.driver(
+                    self.uri,
+                    auth=(self.user, self.password),
+                    max_connection_lifetime=30 * 60,  # 30 minutes
+                    max_connection_pool_size=50,
+                    connection_timeout=5,
+                )
+                driver.verify_connectivity()
+                self._driver = driver
+                print(f"Connected to Neo4j at {self.uri}")
+                return True
+            except Exception as e:
+                self._last_connect_failure = time.time()
+                print(f"Failed to connect to Neo4j: {e}")
+                return False
+
     def verify_connection(self) -> bool:
         """
         Verify the connection to Neo4j.
-        
+
         Returns:
             True if connected, False otherwise.
         """
-        if not self.driver:
+        if not self._ensure_driver():
             return False
-        
+
         try:
-            with self.driver.session() as session:
+            with self._driver.session() as session:
                 session.run("RETURN 1").consume()
             return True
         except Exception:
             return False
+
+    def is_connected(self) -> bool:
+        """Public alias for verify_connection()."""
+        return self.verify_connection()
     
     def get_session(self) -> Optional[Session]:
         """
@@ -457,49 +510,65 @@ class GraphEngine:
             self._stats['cache_misses'] += 1
         
         try:
-            with self.driver.session() as session:
-                result = session.run(cached_query, **cached_params)
-                
+            with self._driver.session() as session:
+                # parameters= rather than **kwargs, so a param named 'query'
+                # or 'parameters' cannot collide with the driver's signature.
+                result = session.run(cached_query, parameters=cached_params)
+
                 nodes = []
                 relationships = []
-                stats = {}
-                
+                records: List[Dict[str, Any]] = []
+
                 for record in result:
+                    records.append(record.data())
                     for key, value in record.items():
-                        if hasattr(value, '__class__') and value.__class__.__name__ == 'Node':
+                        if isinstance(value, neo4j_graph.Node):
                             node = self._parse_node(value)
                             if node and node not in nodes:
                                 nodes.append(node)
-                        elif hasattr(value, '__class__') and value.__class__.__name__ == 'Relationship':
+                        elif isinstance(value, neo4j_graph.Relationship):
                             rel = self._parse_relationship(value)
                             if rel and rel not in relationships:
                                 relationships.append(rel)
-                
-                # Get query stats
+
+                # Get query stats. SummaryCounters is not a mapping in the 5.x
+                # driver, so dict(summary.counters) raises; read the documented
+                # attributes explicitly instead.
                 summary = result.consume()
+                counters = summary.counters
                 stats = {
-                    'counters': dict(summary.counters),
+                    'counters': {
+                        name: getattr(counters, name, 0)
+                        for name in (
+                            'nodes_created', 'nodes_deleted',
+                            'relationships_created', 'relationships_deleted',
+                            'properties_set', 'labels_added', 'labels_removed',
+                            'indexes_added', 'indexes_removed',
+                            'constraints_added', 'constraints_removed',
+                        )
+                    },
                     'query_type': summary.query_type,
                 }
-                
+
                 execution_time = time.time() - start_time
                 self._stats['queries_executed'] += 1
                 self._stats['query_time_total'] += execution_time
-                
+
                 # Cache the query
                 if use_cache and cache_key not in self._query_cache:
                     self._query_cache[cache_key] = (query, params)
-                
+
                 return GraphResult(
                     nodes=nodes,
                     relationships=relationships,
+                    records=records,
                     query=query,
                     execution_time=execution_time,
                     stats=stats,
                 )
-        
+
         except Exception as e:
-            print(f"Query execution error: {e}")
+            print(f"Query execution error ({type(e).__name__}): {e}")
             return None
     
     def _generate_cache_key(self, query: str, params: Dict) -> str:
@@ -507,25 +576,39 @@ class GraphEngine:
         param_str = json.dumps(params, sort_keys=True) if params else ""
         return hashlib.sha256(f"{query}:{param_str}".encode()).hexdigest()
     
+    @staticmethod
+    def _entity_id(neo4j_entity) -> str:
+        """
+        Best identifier for a Neo4j entity: the business 'id' property that
+        create_node/create_relationship set, falling back to the driver's
+        element_id. Downstream code (entity merge, threat-graph classification)
+        treats node_id as a business id, so the property must win when present.
+        """
+        props = dict(neo4j_entity)
+        business_id = props.get('id')
+        if business_id:
+            return str(business_id)
+        return str(getattr(neo4j_entity, 'element_id', '') or getattr(neo4j_entity, 'id', ''))
+
     def _parse_node(self, neo4j_node) -> Optional[Node]:
         """Parse a Neo4j Node object."""
         try:
             return Node(
-                node_id=str(neo4j_node.id),
+                node_id=self._entity_id(neo4j_node),
                 labels=list(neo4j_node.labels),
                 properties=dict(neo4j_node),
             )
         except Exception:
             return None
-    
+
     def _parse_relationship(self, neo4j_rel) -> Optional[Relationship]:
         """Parse a Neo4j Relationship object."""
         try:
             return Relationship(
-                rel_id=str(neo4j_rel.id),
+                rel_id=self._entity_id(neo4j_rel),
                 rel_type=neo4j_rel.type,
-                source_id=str(neo4j_rel.start_node.id),
-                target_id=str(neo4j_rel.end_node.id),
+                source_id=self._entity_id(neo4j_rel.start_node),
+                target_id=self._entity_id(neo4j_rel.end_node),
                 properties=dict(neo4j_rel),
             )
         except Exception:
@@ -548,7 +631,7 @@ class GraphEngine:
             with self.driver.session() as session:
                 with session.begin_transaction() as tx:
                     for query, params in queries:
-                        tx.run(query, **params)
+                        tx.run(query, parameters=params)
             return True
         except Exception as e:
             print(f"Transaction error: {e}")
@@ -578,28 +661,30 @@ class GraphEngine:
             try:
                 with self.driver.session() as session:
                     for params in batch:
-                        result = session.run(query, **params)
+                        result = session.run(query, parameters=params)
                         nodes = []
                         relationships = []
-                        
+                        records: List[Dict[str, Any]] = []
+
                         for record in result:
+                            records.append(record.data())
                             for key, value in record.items():
-                                if hasattr(value, '__class__') and value.__class__.__name__ == 'Node':
+                                if isinstance(value, neo4j_graph.Node):
                                     node = self._parse_node(value)
                                     if node and node not in nodes:
                                         nodes.append(node)
-                                elif hasattr(value, '__class__') and value.__class__.__name__ == 'Relationship':
+                                elif isinstance(value, neo4j_graph.Relationship):
                                     rel = self._parse_relationship(value)
                                     if rel and rel not in relationships:
                                         relationships.append(rel)
-                        
-                        summary = result.consume()
-                        
+
+                        result.consume()
+
                         results.append(GraphResult(
                             nodes=nodes,
                             relationships=relationships,
+                            records=records,
                             query=query,
-                            stats={'counters': dict(summary.counters)},
                         ))
             except Exception as e:
                 print(f"Batch execution error: {e}")
@@ -664,11 +749,14 @@ class GraphEngine:
         properties['id'] = rel_id
         properties['created_at'] = datetime.utcnow().isoformat()
         
+        # RETURN a and b as well: with only r in the result the driver leaves
+        # start/end nodes as property-less stubs, so the parsed relationship
+        # would carry element ids instead of the business ids callers passed in.
         query = """
         MATCH (a), (b)
         WHERE a.id = $source_id AND b.id = $target_id
         CREATE (a)-[r:%s $props]->(b)
-        RETURN r
+        RETURN a, r, b
         """ % rel_type
         
         params = {
@@ -755,7 +843,7 @@ class GraphEngine:
         WHERE a.id = $source_id AND b.id = $target_id
         MERGE (a)-[r:%s]->(b)
         SET r += $props
-        RETURN r
+        RETURN a, r, b
         """ % rel_type
         
         params = {
@@ -875,48 +963,38 @@ class GraphEngine:
         
         try:
             schema = GraphSchema()
-            
-            # Get node labels
-            query = "CALL db.labels()"
-            result = self.execute_query(query)
+
+            # These procedures return scalar rows, which land in .records
+            # (never in .nodes - the old code silently produced an empty schema).
+            result = self.execute_query("CALL db.labels()")
             if result:
-                for record in result.nodes:
-                    label = record.get_property('label', '')
+                for record in result.records:
+                    label = record.get('label', '')
                     if label:
                         schema.node_labels[label] = {}
-            
-            # Get relationship types
-            query = "CALL db.relationshipTypes()"
-            result = self.execute_query(query)
+
+            result = self.execute_query("CALL db.relationshipTypes()")
             if result:
-                for record in result.nodes:
-                    rel_type = record.get_property('relationshipType', '')
+                for record in result.records:
+                    rel_type = record.get('relationshipType', '')
                     if rel_type:
                         schema.relationship_types[rel_type] = {}
-            
-            # Get property keys
-            query = "CALL db.propertyKeys()"
-            result = self.execute_query(query)
+
+            result = self.execute_query("CALL db.propertyKeys()")
             if result:
-                for record in result.nodes:
-                    prop_key = record.get_property('propertyKey', '')
+                for record in result.records:
+                    prop_key = record.get('propertyKey', '')
                     if prop_key:
                         schema.property_keys[prop_key] = 'string'  # Default type
-            
-            # Get indexes
-            query = "SHOW INDEXES"
-            result = self.execute_query(query)
+
+            result = self.execute_query("SHOW INDEXES")
             if result:
-                for record in result.nodes:
-                    schema.indexes.append(dict(record.properties))
-            
-            # Get constraints
-            query = "SHOW CONSTRAINTS"
-            result = self.execute_query(query)
+                schema.indexes.extend(result.records)
+
+            result = self.execute_query("SHOW CONSTRAINTS")
             if result:
-                for record in result.nodes:
-                    schema.constraints.append(dict(record.properties))
-            
+                schema.constraints.extend(result.records)
+
             return schema
         
         except Exception as e:
@@ -974,39 +1052,108 @@ class GraphEngine:
             print(f"Create constraint error: {e}")
             return False
     
+    def execute_records(self, query: str, params: Dict = None) -> List[Dict[str, Any]]:
+        """Execute a query and return the raw record rows."""
+        result = self.execute_query(query, params)
+        return result.records if result else []
+
+    def execute_scalar(self, query: str, params: Dict = None, default: Any = None) -> Any:
+        """Execute a query and return the first column of the first row."""
+        records = self.execute_records(query, params)
+        if records:
+            first = records[0]
+            if first:
+                return next(iter(first.values()))
+        return default
+
+    def node_count(self) -> int:
+        """Total number of nodes in the graph."""
+        return int(self.execute_scalar("MATCH (n) RETURN count(n) AS c", default=0) or 0)
+
+    def relationship_count(self) -> int:
+        """Total number of relationships in the graph."""
+        return int(self.execute_scalar("MATCH ()-[r]->() RETURN count(r) AS c", default=0) or 0)
+
+    def to_networkx(self, force_refresh: bool = False, directed: bool = False):
+        """
+        Materialise the graph as a networkx Graph/DiGraph, cached for
+        _nx_cache_ttl seconds.
+
+        Returns None when networkx or the database is unavailable - callers
+        must treat None as "cannot compute", never as "empty graph".
+        """
+        if not NETWORKX_AVAILABLE:
+            return None
+        if not self._ensure_driver():
+            return None
+
+        now = time.time()
+        if not force_refresh and self._nx_cache is not None:
+            cached_at, cached_graph = self._nx_cache
+            if now - cached_at < self._nx_cache_ttl and cached_graph.is_directed() == directed:
+                return cached_graph
+
+        graph = nx.DiGraph() if directed else nx.Graph()
+
+        node_result = self.execute_query("MATCH (n) RETURN n", use_cache=False)
+        if node_result is None:
+            return None
+        for node in node_result.nodes:
+            graph.add_node(node.node_id, labels=node.labels, **node.properties)
+
+        rel_result = self.execute_query("MATCH (a)-[r]->(b) RETURN a, r, b", use_cache=False)
+        if rel_result is None:
+            return None
+        for rel in rel_result.relationships:
+            graph.add_edge(rel.source_id, rel.target_id, type=rel.rel_type, **rel.properties)
+
+        self._nx_cache = (now, graph)
+        return graph
+
+    def _get_networkx_graph(self, force_refresh: bool = False):
+        """
+        Transitional alias for to_networkx().
+
+        Several AI modules already call this name on the engine; keep it until
+        those call sites migrate to the public name.
+        """
+        return self.to_networkx(force_refresh=force_refresh)
+
     def get_stats(self) -> Dict[str, Any]:
         """
         Get engine statistics.
-        
+
         Returns:
             Dictionary with statistics.
         """
         stats = self._stats.copy()
-        
+
         if stats['queries_executed'] > 0:
             stats['avg_query_time'] = stats['query_time_total'] / stats['queries_executed']
         else:
             stats['avg_query_time'] = 0.0
-        
+
         stats['cache_size'] = len(self._query_cache)
-        stats['connected'] = self.driver is not None
-        
+        stats['connected'] = self.is_connected()
+        if stats['connected']:
+            stats['node_count'] = self.node_count()
+            stats['edge_count'] = self.relationship_count()
+        else:
+            stats['node_count'] = 0
+            stats['edge_count'] = 0
+
         return stats
-    
+
     def close(self):
         """Close the driver and all sessions."""
-        if self.driver:
-            self.driver.close()
-            self.driver = None
-        
+        if self._driver:
+            self._driver.close()
+            self._driver = None
+
         self._session_pool.clear()
         self._query_cache.clear()
+        self._nx_cache = None
 
 
 # Global graph engine instance
 graph_engine = GraphEngine()
-
-
-# Neo4j trust constants (for SSL)
-TRUST_ALL_CERTIFICATES = "TRUST_ALL_CERTIFICATES"
-TRUST_SYSTEM_CA_SIGNED_CERTIFICATES = "TRUST_SYSTEM_CA_SIGNED_CERTIFICATES"

@@ -1,50 +1,41 @@
-# Core Framework
-Flask==3.0.0
-Flask-CORS==4.0.0
-Werkzeug==3.0.1
+# OpenLens backend requirements (FastAPI gateway + service layer).
+# Floors, not pins: the old numpy/pandas pins had no wheels for modern Python.
 
-# Metadata Extraction
-Pillow==10.1.0
-exifread==3.0.0
-piexif==1.1.3
+# API gateway
+fastapi>=0.110
+uvicorn>=0.27
+websockets>=12.0
+python-multipart>=0.0.7
+pydantic>=2.6
+python-dotenv>=1.0
 
-# NLP
-spacy==0.101.0
-en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.0.0/en_core_web_sm-3.0.0-py3-none-any.whl
+# Auth
+PyJWT>=2.8
+bcrypt>=4.1
+passlib>=1.7.4
 
-# Scraping
-requests==2.31.0
-beautifulsoup4==4.12.2
-lxml==4.9.3
+# Data / graph / ML (CPU)
+neo4j>=5.28,<6
+networkx>=3.4
+numpy>=2.3
+pandas>=2.3
+scikit-learn>=1.7
+rapidfuzz>=3.9
 
-# Twitter
-snscrape==0.5.0.20230717
+# Scraping / HTTP
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
 
-# Instagram
-instaloader==4.10.1
+# Async processing
+celery>=5.3
+redis>=5.0
 
-# Telegram
-telethon==2.0.0
-
-# Async Processing
-celery==5.3.4
-redis==5.0.1
-
-# Database
-psycopg2-binary==2.9.9
-SQLAlchemy==2.0.23
-neo4j==5.12.0
-
-# Data Processing
-pandas==2.1.4
-numpy==1.26.2
-
-# Rate Limiting
-python-dateutil==2.8.2
+# Crypto & system
+cryptography>=42.0
+psutil>=5.9
 
 # Testing
-pytest==7.4.3
-pytest-cov==4.1.0
-
-# Development
-python-dotenv==1.0.0
+pytest>=8.0
+pytest-cov>=4.1
+httpx>=0.27

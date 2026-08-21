@@ -149,62 +149,15 @@ class NetworkAnalyzer:
     
     def _get_networkx_graph(self, force_refresh: bool = False) -> Optional[nx.Graph]:
         """
-        Get the graph as a NetworkX graph.
-        
-        Args:
-            force_refresh: Force refresh from database.
-            
-        Returns:
-            NetworkX Graph or None.
+        Materialise the graph via the engine, which is the single
+        correct implementation (business ids, hydrated edge endpoints).
         """
-        if not NETWORKX_AVAILABLE:
-            return None
-        
         if not self.graph_engine:
             return None
-        
-        current_time = time.time()
-        if not force_refresh and self._graph and (current_time - self._last_updated) < self._cache_ttl:
-            return self._graph
-        
-        try:
-            # Fetch all nodes and relationships
-            query = "MATCH (n) RETURN n"
-            result = self.graph_engine.execute_query(query)
-            
-            if not result:
-                return None
-            
-            self._graph = nx.Graph()
-            
-            # Add nodes
-            for node in result.nodes:
-                self._graph.add_node(
-                    node.node_id,
-                    labels=node.labels,
-                    **node.properties
-                )
-            
-            # Add edges
-            query = "MATCH ()-[r]->() RETURN r"
-            result = self.graph_engine.execute_query(query)
-            
-            if result:
-                for rel in result.relationships:
-                    self._graph.add_edge(
-                        rel.source_id,
-                        rel.target_id,
-                        type=rel.rel_type,
-                        **rel.properties
-                    )
-            
-            self._last_updated = current_time
-            return self._graph
-        
-        except Exception as e:
-            print(f"Error building NetworkX graph: {e}")
-            return None
-    
+        graph = self.graph_engine.to_networkx(force_refresh=force_refresh)
+        self._graph = graph
+        self._last_updated = time.time()
+        return graph
     def calculate_centrality(self, node_ids: List[str] = None) -> List[CentralityResult]:
         """
         Calculate centrality metrics for nodes.

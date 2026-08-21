@@ -19,6 +19,9 @@ from .authorization import AuthorizationService, authorization_service
 from .security_policies import SecurityPolicyManager, security_policy_manager
 from .compliance import ComplianceManager, compliance_manager
 
+# Collaborator wiring lives in backend/composition.py (the single composition
+# root); this package only re-exports.
+
 __all__ = [
     'RBAC',
     'rbac',

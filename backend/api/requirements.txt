@@ -1,6 +1,9 @@
 # API Gateway Requirements
 fastapi>=0.95.0
 uvicorn>=0.21.0
+# Required for the /api/ws endpoints: without a WebSocket library uvicorn
+# rejects every upgrade request with a 404.
+websockets>=12.0
 python-multipart>=0.0.6
 pydantic>=1.10.0
 
