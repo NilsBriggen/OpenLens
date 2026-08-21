@@ -38,6 +38,7 @@ import {
   useWebSocket
 } from '../hooks/useApi';
 import { useDebounce, useLocalStorage } from '../hooks/useApi';
+import type { ScrapeJob } from '../types/api';
 import { exportToCSV, exportToJSON } from '../utils/exportUtils';
 
 const { Title, Text, Paragraph } = Typography;
@@ -45,25 +46,6 @@ const { TabPane } = Tabs;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 const { Step } = Steps;
-
-interface ScrapeJob {
-  id: string;
-  name: string;
-  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-  urls: string[];
-  depth: number;
-  progress: number;
-  successCount: number;
-  failedCount: number;
-  startTime: string | null;
-  endTime: string | null;
-  duration: number | null;
-  useProxy: boolean;
-  useCache: boolean;
-  renderJs: boolean;
-  jobType: string;
-  config?: any;
-}
 
 interface ProxyServer {
   id: string;
@@ -139,7 +121,7 @@ const ScrapingHub: React.FC = () => {
   
   // WebSocket for real-time updates
   const { isConnected, messages } = useWebSocket(
-    '/ws/scraping',
+    '/api/ws/scraping',
     (data) => {
       if (data.type === 'job_update') {
         refetchJobs();
@@ -231,7 +213,7 @@ const ScrapingHub: React.FC = () => {
       key: 'name',
       render: (name: string, record: ScrapeJob) => (
         <Space>
-          {getJobTypeIcon(record.jobType)}
+          {getJobTypeIcon(record.jobType ?? 'web')}
           <Text strong>{name}</Text>
         </Space>
       ),
@@ -299,7 +281,7 @@ const ScrapingHub: React.FC = () => {
   const jobTypeData = React.useMemo(() => {
     const counts: Record<string, number> = {};
     jobs.forEach(j => {
-      counts[j.jobType] = (counts[j.jobType] || 0) + 1;
+      counts[j.status] = (counts[j.status] || 0) + 1;
     });
     return Object.entries(counts).map(([type, count]) => ({ type, count }));
   }, [jobs]);
@@ -717,7 +699,7 @@ const ScrapingHub: React.FC = () => {
         {selectedJob && (
           <Card>
             <Title level={4}>{selectedJob.name}</Title>
-            <Tag color={getJobTypeColor(selectedJob.jobType)}>
+            <Tag color={getJobTypeColor(selectedJob.jobType ?? 'web')}>
               {selectedJob.jobType}
             </Tag>
             {getStatusTag(selectedJob.status)}
@@ -745,7 +727,7 @@ const ScrapingHub: React.FC = () => {
               </Col>
               <Col span={12}>
                 <Text strong>URLs:</Text>
-                <Text>{selectedJob.urls.length}</Text>
+                <Text>{selectedJob.urls?.length ?? 0}</Text>
               </Col>
             </Row>
             

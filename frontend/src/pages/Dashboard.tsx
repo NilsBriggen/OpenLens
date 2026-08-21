@@ -7,7 +7,7 @@ import {
   ProjectOutlined,
   RobotOutlined,
   SearchOutlined,
-  ShieldOutlined,
+  SafetyCertificateOutlined,
   AlertOutlined,
   ClockCircleOutlined,
   ThunderboltOutlined,
@@ -18,102 +18,22 @@ import {
   NodeIndexOutlined,
   BranchesOutlined,
   ClusterOutlined,
-  FilterOutlined
+  FilterOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { Line, Bar, Pie, Column } from '@ant-design/plots';
 import dayjs from 'dayjs';
-import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
-import Cookies from 'js-cookie';
+import {
+  useGraphStats, useSystemHealth, useIOCs, useAlerts, useThreatFeeds,
+  useScrapeJobs, useAuditLogs,
+} from '../hooks/useApi';
 
 const { Title, Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Search } = Input;
 
-// API Service
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
-  headers: {
-    'Authorization': `Bearer ${Cookies.get('access_token')}`,
-  },
-});
-
-// Mock data for development
-const mockStats = {
-  totalNodes: 12453,
-  totalRelationships: 87342,
-  activeUsers: 42,
-  activeScrapeJobs: 18,
-  threatFeeds: 24,
-  iocs: 1567,
-  alerts: 34,
-  systemHealth: 98.5,
-};
-
-const mockTrends = {
-  nodes: [12000, 12100, 12200, 12300, 12400, 12453],
-  relationships: [80000, 82000, 84000, 85000, 86000, 87342],
-  users: [35, 38, 40, 41, 42, 42],
-  dates: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-};
-
-const mockModuleUsage = [
-  { name: 'Graph Analytics', value: 35, icon: <ProjectOutlined /> },
-  { name: 'AI/ML', value: 25, icon: <RobotOutlined /> },
-  { name: 'Scraping', value: 20, icon: <SearchOutlined /> },
-  { name: 'Security', value: 12, icon: <ShieldOutlined /> },
-  { name: 'Threat Intel', value: 8, icon: <AlertOutlined /> },
-];
-
-const mockRecentActivity = [
-  {
-    id: 1,
-    type: 'scrape',
-    title: 'Scraped 150 URLs',
-    description: 'Distributed scraping job completed',
-    timestamp: '2024-01-15 14:30:00',
-    status: 'success',
-    user: 'admin',
-  },
-  {
-    id: 2,
-    type: 'threat',
-    title: 'New IOC Detected',
-    description: 'Malicious IP address identified',
-    timestamp: '2024-01-15 13:45:00',
-    status: 'warning',
-    user: 'system',
-  },
-  {
-    id: 3,
-    type: 'ai',
-    title: 'Anomaly Detected',
-    description: 'Statistical anomaly found in network traffic',
-    timestamp: '2024-01-15 12:15:00',
-    status: 'error',
-    user: 'admin',
-  },
-  {
-    id: 4,
-    type: 'graph',
-    title: 'New Connections',
-    description: '123 new relationships added',
-    timestamp: '2024-01-15 10:00:00',
-    status: 'success',
-    user: 'system',
-  },
-  {
-    id: 5,
-    type: 'security',
-    title: 'User Login',
-    description: 'Admin logged in from new location',
-    timestamp: '2024-01-15 09:30:00',
-    status: 'info',
-    user: 'admin',
-  },
-];
 
 const mockQuickActions = [
   {
@@ -155,24 +75,55 @@ const Dashboard: React.FC = () => {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
-  // Fetch system stats
-  const { data: systemStats, isLoading: statsLoading } = useQuery({
-    queryKey: ['system-stats'],
-    queryFn: async () => {
-      const response = await api.get('/api/system/stats');
-      return response.data;
-    },
-    initialData: mockStats,
-  });
+  // Live data - no mock seeds. Missing numbers render as 0 / empty states.
+  const { data: graphStats, isLoading: statsLoading } = useGraphStats();
+  const { data: systemHealth, isLoading: healthLoading } = useSystemHealth();
+  const { data: iocs = [] } = useIOCs({ limit: 1000 });
+  const { data: alerts = [] } = useAlerts({ limit: 1000 });
+  const { data: feeds = [] } = useThreatFeeds();
+  const { data: jobs = [] } = useScrapeJobs();
+  const { data: auditLogs = [] } = useAuditLogs(50);
 
-  // Fetch system health
-  const { data: systemHealth, isLoading: healthLoading } = useQuery({
-    queryKey: ['system-health'],
-    queryFn: async () => {
-      const response = await api.get('/api/system/health');
-      return response.data;
-    },
-  });
+  const healthPercent = React.useMemo(() => {
+    const resources = (systemHealth as any)?.resources;
+    if (!resources) return 0;
+    // Health = headroom: 100 minus the worst of CPU/memory/disk pressure.
+    const worst = Math.max(resources.cpu_usage ?? 0,
+                           resources.memory_usage ?? 0,
+                           resources.disk_usage ?? 0);
+    return Math.max(0, Math.round((100 - worst) * 10) / 10);
+  }, [systemHealth]);
+
+  const systemStats = React.useMemo(() => ({
+    totalNodes: graphStats?.nodeCount ?? 0,
+    totalRelationships: graphStats?.edgeCount ?? 0,
+    activeScrapeJobs: jobs.filter(j => j.status === 'running' || j.status === 'pending').length,
+    threatFeeds: feeds.length,
+    iocs: iocs.length,
+    alerts: alerts.filter(a => a.status === 'new' || a.status === 'acknowledged').length,
+    systemHealth: healthPercent,
+  }), [graphStats, jobs, feeds, iocs, alerts, healthPercent]);
+
+  // Plain values only: React elements in chart data recurse forever inside
+  // the chart library's deepClone.
+  const moduleUsage = React.useMemo(() => ([
+    { name: 'Graph nodes', value: systemStats.totalNodes },
+    { name: 'IOCs', value: systemStats.iocs },
+    { name: 'Scrape jobs', value: jobs.length },
+    { name: 'Alerts', value: alerts.length },
+    { name: 'Feeds', value: systemStats.threatFeeds },
+  ]), [systemStats, jobs.length, alerts.length]);
+
+  const recentActivity = React.useMemo(() => auditLogs.map((event, index) => ({
+    id: event.id || String(index),
+    type: event.eventType || 'system',
+    title: `${event.action || event.eventType || 'event'} ${event.resource || ''}`.trim(),
+    description: event.username ? `by ${event.username}` : '',
+    timestamp: event.timestamp || '',
+    status: event.severity === 'error' ? 'error'
+      : event.severity === 'warning' ? 'warning' : 'info',
+    user: event.username || 'system',
+  })), [auditLogs]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -215,32 +166,34 @@ const Dashboard: React.FC = () => {
       case 'graph':
         return <ProjectOutlined />;
       case 'security':
-        return <ShieldOutlined />;
+        return <SafetyCertificateOutlined />;
       default:
         return <NodeIndexOutlined />;
     }
   };
 
   const lineConfig = {
-    data: mockTrends.dates.map((date, index) => ({
-      date,
-      Nodes: mockTrends.nodes[index],
-      Relationships: mockTrends.relationships[index],
-    })),
+    // Long format: one row per series per date. A multi-series Line needs a
+    // single yField plus a seriesField - passing an array of yFields makes G2
+    // build shapes the 'path-in' appear animation cannot measure, which throws
+    // "element.getTotalLength is not a function" and takes the page down.
+    // No trend-history endpoint exists yet; chart the current totals only.
+    data: [
+      { date: 'now', type: 'Nodes', value: systemStats.totalNodes },
+      { date: 'now', type: 'Relationships', value: systemStats.totalRelationships },
+    ],
     xField: 'date',
-    yField: ['Nodes', 'Relationships'],
+    yField: 'value',
     seriesField: 'type',
     color: ['#1890ff', '#52c41a'],
     legend: {
       position: 'top-right' as const,
     },
     smooth: true,
-    animation: {
-      appear: {
-        animation: 'path-in',
-        duration: 1000,
-      },
-    },
+    // No 'path-in' appear animation here: it measures the element with
+    // getTotalLength(), which the point markers rendered below are not, so it
+    // throws during the first draw. G2's default appear animation is
+    // shape-appropriate.
     style: {
       lineWidth: 3,
     },
@@ -251,7 +204,7 @@ const Dashboard: React.FC = () => {
   };
 
   const barConfig = {
-    data: mockModuleUsage,
+    data: moduleUsage,
     xField: 'name',
     yField: 'value',
     seriesField: 'name',
@@ -284,7 +237,7 @@ const Dashboard: React.FC = () => {
   };
 
   const pieConfig = {
-    data: mockModuleUsage,
+    data: moduleUsage,
     angleField: 'value',
     colorField: 'name',
     radius: 0.8,
@@ -329,7 +282,7 @@ const Dashboard: React.FC = () => {
     },
   };
 
-  const filteredActivity = mockRecentActivity.filter(activity => {
+  const filteredActivity = recentActivity.filter(activity => {
     if (filter !== 'all' && activity.type !== filter) return false;
     if (search && !activity.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -392,7 +345,7 @@ const Dashboard: React.FC = () => {
         <Card>
           <Statistic
             title="Active Users"
-            value={systemStats.activeUsers}
+            value={'—'}
             prefix={<UserOutlined style={{ color: '#faad14' }} />}
             suffix={<ArrowUpOutlined style={{ color: '#52c41a' }} />}
           />
@@ -441,7 +394,7 @@ const Dashboard: React.FC = () => {
               <Progress
                 type="circle"
                 percent={systemHealth?.resources?.cpu_usage || systemStats.systemHealth}
-                status={systemStats.systemHealth > 80 ? 'success' : systemStats.systemHealth > 50 ? 'warning' : 'exception'}
+                status={systemStats.systemHealth > 80 ? 'success' : systemStats.systemHealth > 50 ? 'normal' : 'exception'}
                 strokeColor={systemStats.systemHealth > 80 ? '#52c41a' : systemStats.systemHealth > 50 ? '#faad14' : '#f5222d'}
               />
             </div>
@@ -460,7 +413,7 @@ const Dashboard: React.FC = () => {
         <Row gutter={24}>
           <Col xs={24} lg={16}>
             <Card title="Graph Growth Trends">
-              <Line {...lineConfig} />
+              <Line {...(lineConfig as any)} />
             </Card>
           </Col>
           <Col xs={24} lg={8}>
@@ -480,7 +433,7 @@ const Dashboard: React.FC = () => {
         <Row gutter={24}>
           <Col xs={24} lg={12}>
             <Card title="Activity by Module">
-              <Bar {...barConfig} />
+              <Bar {...(barConfig as any)} />
             </Card>
           </Col>
           <Col xs={24} lg={12}>
@@ -641,7 +594,7 @@ const Dashboard: React.FC = () => {
                   <Tag color="orange">9 Modules</Tag>
                 </Space>
                 <Space>
-                  <ShieldOutlined style={{ color: '#f5222d' }} />
+                  <SafetyCertificateOutlined style={{ color: '#f5222d' }} />
                   <Text strong>Enterprise Security</Text>
                   <Tag color="red">7 Modules</Tag>
                 </Space>
@@ -688,13 +641,5 @@ const Dashboard: React.FC = () => {
     </div>
   );
 };
-
-// Temporary icon
-const CheckCircleOutlined = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-    <polyline points="22 4 12 14.01 9 11.01" />
-  </svg>
-);
 
 export default Dashboard;

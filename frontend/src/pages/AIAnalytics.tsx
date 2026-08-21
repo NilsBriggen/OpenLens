@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Tabs, Button, Space, Typography, Row, Col, Divider, Modal, Form, Input, Select, Table, Tag, Progress, Alert, Spin, DatePicker } from 'antd';
+import { Card, Tabs, Button, Space, Typography, Row, Col, Divider, Modal, Form, Input, Select, Table, Tag, Progress, Alert, Spin, DatePicker, Statistic } from 'antd';
 import {
   RobotOutlined,
   SearchOutlined,
@@ -23,8 +23,8 @@ import {
 import { motion } from 'framer-motion';
 import { Line, Bar, Pie, Column, Scatter } from '@ant-design/plots';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
-import Cookies from 'js-cookie';
+import { message } from 'antd';
+import { apiClient, aiEndpoints, graphEndpoints } from '../lib/apiClient';
 
 const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
@@ -32,187 +32,8 @@ const { Option } = Select;
 const { RangePicker } = DatePicker;
 
 // API Service
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
-  headers: {
-    'Authorization': `Bearer ${Cookies.get('access_token')}`,
-  },
-});
 
 // Mock data
-const mockAnomalies = [
-  {
-    id: 'anomaly-1',
-    type: 'statistical',
-    score: 9.5,
-    entity: 'Node 12345',
-    feature: 'connection_count',
-    value: 156,
-    expected: 45,
-    timestamp: '2024-01-15T14:30:00Z',
-    status: 'high',
-  },
-  {
-    id: 'anomaly-2',
-    type: 'isolation_forest',
-    score: 8.2,
-    entity: 'Node 67890',
-    feature: 'activity_pattern',
-    value: 'suspicious',
-    expected: 'normal',
-    timestamp: '2024-01-15T13:45:00Z',
-    status: 'medium',
-  },
-  {
-    id: 'anomaly-3',
-    type: 'graph',
-    score: 7.8,
-    entity: 'Subgraph A',
-    feature: 'density',
-    value: 0.95,
-    expected: 0.45,
-    timestamp: '2024-01-15T12:15:00Z',
-    status: 'medium',
-  },
-  {
-    id: 'anomaly-4',
-    type: 'temporal',
-    score: 6.5,
-    entity: 'Node 54321',
-    feature: 'activity_spike',
-    value: 45,
-    expected: 15,
-    timestamp: '2024-01-15T10:00:00Z',
-    status: 'low',
-  },
-];
-
-const mockEntities = [
-  {
-    id: 'entity-1',
-    name: 'John Doe',
-    type: 'person',
-    matches: [
-      { id: 'match-1', name: 'John Doe', similarity: 0.98, source: 'database_a' },
-      { id: 'match-2', name: 'John H. Doe', similarity: 0.85, source: 'database_b' },
-      { id: 'match-3', name: 'Jon Doe', similarity: 0.72, source: 'database_c' },
-    ],
-    resolved: true,
-  },
-  {
-    id: 'entity-2',
-    name: 'Tech Corp',
-    type: 'company',
-    matches: [
-      { id: 'match-4', name: 'Tech Corp Inc', similarity: 0.95, source: 'database_a' },
-      { id: 'match-5', name: 'Tech Corporation', similarity: 0.88, source: 'database_b' },
-    ],
-    resolved: false,
-  },
-];
-
-const mockPredictions = [
-  {
-    id: 'prediction-1',
-    type: 'link',
-    node1: 'Person A',
-    node2: 'Person B',
-    score: 0.92,
-    method: 'common_neighbors',
-    confidence: 'high',
-    timestamp: '2024-01-15T14:30:00Z',
-  },
-  {
-    id: 'prediction-2',
-    type: 'link',
-    node1: 'Company X',
-    node2: 'Company Y',
-    score: 0.78,
-    method: 'jaccard',
-    confidence: 'medium',
-    timestamp: '2024-01-15T13:45:00Z',
-  },
-  {
-    id: 'prediction-3',
-    type: 'node_classification',
-    node: 'Person C',
-    class: 'suspicious',
-    score: 0.85,
-    method: 'logistic_regression',
-    confidence: 'high',
-    timestamp: '2024-01-15T12:15:00Z',
-  },
-];
-
-const mockClusters = [
-  {
-    id: 'cluster-1',
-    size: 45,
-    cohesion: 0.85,
-    labels: ['person', 'company'],
-    topFeatures: ['high_activity', 'multiple_connections'],
-  },
-  {
-    id: 'cluster-2',
-    size: 32,
-    cohesion: 0.78,
-    labels: ['ip', 'domain'],
-    topFeatures: ['suspicious_patterns', 'unusual_traffic'],
-  },
-  {
-    id: 'cluster-3',
-    size: 28,
-    cohesion: 0.92,
-    labels: ['email', 'person'],
-    topFeatures: ['communication_network', 'frequent_messages'],
-  },
-];
-
-const mockNLPResults = [
-  {
-    id: 'nlp-1',
-    text: 'The company is planning to expand into new markets next quarter.',
-    sentiment: 'positive',
-    entities: [
-      { text: 'company', type: 'ORG', score: 0.95 },
-      { text: 'new markets', type: 'MISC', score: 0.88 },
-      { text: 'next quarter', type: 'DATE', score: 0.92 },
-    ],
-    topics: ['business', 'expansion', 'growth'],
-  },
-  {
-    id: 'nlp-2',
-    text: 'Security breach detected in the main server.',
-    sentiment: 'negative',
-    entities: [
-      { text: 'security breach', type: 'EVENT', score: 0.98 },
-      { text: 'main server', type: 'MISC', score: 0.95 },
-    ],
-    topics: ['security', 'incident', 'threat'],
-  },
-];
-
-const mockRecommendations = [
-  {
-    id: 'rec-1',
-    type: 'investigation',
-    title: 'Investigate Anomaly Cluster',
-    description: 'A cluster of 12 nodes shows unusual activity patterns.',
-    priority: 'high',
-    confidence: 0.92,
-    actions: ['Review connections', 'Check timestamps', 'Verify identities'],
-  },
-  {
-    id: 'rec-2',
-    type: 'monitoring',
-    title: 'Monitor IP Range',
-    description: 'IP addresses in the 192.168.1.x range show suspicious behavior.',
-    priority: 'medium',
-    confidence: 0.85,
-    actions: ['Set up alerts', 'Increase logging', 'Review firewall rules'],
-  },
-];
-
 const AIAnalytics: React.FC = () => {
   const [activeTab, setActiveTab] = useState('anomalies');
   const [anomalyMethod, setAnomalyMethod] = useState('statistical');
@@ -224,12 +45,12 @@ const AIAnalytics: React.FC = () => {
   const [selectedAnomaly, setSelectedAnomaly] = useState<any>(null);
   const [selectedEntity, setSelectedEntity] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [anomalyResults, setAnomalyResults] = useState(mockAnomalies);
-  const [entityResults, setEntityResults] = useState(mockEntities);
-  const [predictionResults, setPredictionResults] = useState(mockPredictions);
-  const [clusterResults, setClusterResults] = useState(mockClusters);
-  const [nlpResults, setNlpResults] = useState(mockNLPResults);
-  const [recommendationResults, setRecommendationResults] = useState(mockRecommendations);
+  const [anomalyResults, setAnomalyResults] = useState<any[]>([]);
+  const [entityResults, setEntityResults] = useState<any[]>([]);
+  const [predictionResults, setPredictionResults] = useState<any[]>([]);
+  const [clusterResults, setClusterResults] = useState<any[]>([]);
+  const [nlpResults, setNlpResults] = useState<any[]>([]);
+  const [recommendationResults, setRecommendationResults] = useState<any[]>([]);
 
   const queryClient = useQueryClient();
 
@@ -270,33 +91,52 @@ const AIAnalytics: React.FC = () => {
     { label: 'Gaussian Mixture', value: 'gmm' },
   ];
 
-  // Run anomaly detection
+  // Run anomaly detection over the live graph's node properties.
   const runAnomalyDetection = async () => {
     setLoading(true);
     try {
-      const response = await api.post('/api/ai/anomalies/detect', {
+      const nodesResponse = await apiClient.get<any[]>(graphEndpoints.nodes,
+        { params: { limit: 500 } });
+      const rows = (nodesResponse.data || []).map((node) => ({
+        id: node.id,
+        entity_type: node.type,
+        ...Object.fromEntries(Object.entries(node.properties || {})
+          .filter(([, v]) => typeof v === 'number')),
+      }));
+      const response = await apiClient.post(aiEndpoints.anomalies.detect, {
+        data: rows,
         method: anomalyMethod,
         threshold: 3.0,
       });
-      setAnomalyResults(response.data.anomalies || mockAnomalies);
+      setAnomalyResults(response.data.anomalies || []);
     } catch (error) {
       console.error('Anomaly detection error:', error);
+      message.error('Anomaly detection failed');
     } finally {
       setLoading(false);
     }
   };
 
-  // Run entity resolution
+  // Run entity resolution over the live graph's nodes.
   const runEntityResolution = async () => {
     setLoading(true);
     try {
-      const response = await api.post('/api/ai/entities/resolve', {
+      const nodesResponse = await apiClient.get<any[]>(graphEndpoints.nodes,
+        { params: { limit: 500 } });
+      const entities = (nodesResponse.data || []).map((node) => ({
+        id: node.id,
+        type: node.type,
+        ...node.properties,
+      }));
+      const response = await apiClient.post(aiEndpoints.entities.resolve, {
+        entities,
         method: entityMethod,
         threshold: 0.85,
       });
-      setEntityResults(response.data.matches || mockEntities);
+      setEntityResults(response.data.matches || []);
     } catch (error) {
       console.error('Entity resolution error:', error);
+      message.error('Entity resolution failed');
     } finally {
       setLoading(false);
     }
@@ -306,12 +146,12 @@ const AIAnalytics: React.FC = () => {
   const runLinkPrediction = async () => {
     setLoading(true);
     try {
-      const response = await api.post('/api/ai/predict/link', {
-        node1: 'Person A',
-        node2: 'Person B',
+      const response = await apiClient.post(aiEndpoints.predict.link, {
+        node1: 'person-0',
+        node2: 'person-1',
         method: predictionMethod,
       });
-      setPredictionResults([response.data] || mockPredictions);
+      setPredictionResults(response.data ? [response.data] : []);
     } catch (error) {
       console.error('Link prediction error:', error);
     } finally {
@@ -319,14 +159,24 @@ const AIAnalytics: React.FC = () => {
     }
   };
 
-  // Run clustering
+  // Run clustering via graph community detection (the nearest real endpoint).
   const runClustering = async () => {
     setLoading(true);
     try {
-      // This would call the clustering endpoint
-      setClusterResults(mockClusters);
+      const response = await apiClient.post(graphEndpoints.communities, {
+        algorithm: 'louvain',
+      });
+      const communities = response.data?.data?.communities || [];
+      setClusterResults(communities.map((c: any, i: number) => ({
+        id: c.community_id ?? String(i),
+        name: `Community ${c.community_id ?? i}`,
+        size: (c.nodes || []).length,
+        members: c.nodes || [],
+        cohesion: c.modularity ?? 0,
+      })));
     } catch (error) {
       console.error('Clustering error:', error);
+      message.error('Clustering failed');
     } finally {
       setLoading(false);
     }
@@ -399,7 +249,7 @@ const AIAnalytics: React.FC = () => {
         <Progress
           percent={Math.min(score * 10, 100)}
           size="small"
-          status={score > 8 ? 'exception' : score > 5 ? 'warning' : 'normal'}
+          status={score > 8 ? 'exception' : score > 5 ? 'normal' : 'normal'}
         />
       ),
     },
@@ -539,7 +389,7 @@ const AIAnalytics: React.FC = () => {
         <Progress
           percent={score * 100}
           size="small"
-          status={score > 0.8 ? 'success' : score > 0.5 ? 'warning' : 'exception'}
+          status={score > 0.8 ? 'success' : score > 0.5 ? 'normal' : 'exception'}
         />
       ),
     },
@@ -586,7 +436,7 @@ const AIAnalytics: React.FC = () => {
         <Progress
           percent={cohesion * 100}
           size="small"
-          status={cohesion > 0.8 ? 'success' : cohesion > 0.5 ? 'warning' : 'exception'}
+          status={cohesion > 0.8 ? 'success' : cohesion > 0.5 ? 'normal' : 'exception'}
         />
       ),
     },
@@ -713,7 +563,7 @@ const AIAnalytics: React.FC = () => {
         <Progress
           percent={confidence * 100}
           size="small"
-          status={confidence > 0.8 ? 'success' : confidence > 0.5 ? 'warning' : 'exception'}
+          status={confidence > 0.8 ? 'success' : confidence > 0.5 ? 'normal' : 'exception'}
         />
       ),
     },
@@ -755,7 +605,7 @@ const AIAnalytics: React.FC = () => {
 
   // Entity match chart config
   const entityChartConfig = {
-    data: entityResults.flatMap(e => e.matches.map(m => ({
+    data: entityResults.flatMap(e => (e.matches || []).map((m: any) => ({
       entity: e.name,
       match: m.name,
       similarity: m.similarity,

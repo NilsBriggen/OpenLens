@@ -36,48 +36,13 @@ import {
   useWebSocket
 } from '../hooks/useApi';
 import { useDebounce, useLocalStorage } from '../hooks/useApi';
+import type { ThreatFeed, IOC, Alert as ThreatAlert } from '../types/api';
 import { exportToCSV, exportToJSON, exportToSTIX } from '../utils/exportUtils';
 
 const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
-
-interface ThreatFeed {
-  id: string;
-  name: string;
-  feedType: string;
-  enabled: boolean;
-  status: string;
-  iocCount: number;
-  frequency: string;
-  lastUpdated: string;
-  description?: string;
-}
-
-interface IOC {
-  id: string;
-  value: string;
-  iocType: string;
-  confidence: number;
-  severity: string;
-  description?: string;
-  tags: string[];
-  firstSeen: string;
-  lastSeen: string;
-  source: string;
-  relatedThreats: string[];
-}
-
-interface Alert {
-  id: string;
-  title: string;
-  severity: string;
-  status: string;
-  createdAt: string;
-  iocCount: number;
-  description?: string;
-}
 
 const ThreatIntelligence: React.FC = () => {
   // State
@@ -87,7 +52,7 @@ const ThreatIntelligence: React.FC = () => {
   const [alertFormVisible, setAlertFormVisible] = useState(false);
   const [selectedFeed, setSelectedFeed] = useState<ThreatFeed | null>(null);
   const [selectedIOC, setSelectedIOC] = useState<IOC | null>(null);
-  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const [selectedAlert, setSelectedAlert] = useState<ThreatAlert | null>(null);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({
     feedType: '',
@@ -161,7 +126,7 @@ const ThreatIntelligence: React.FC = () => {
   
   // WebSocket for real-time updates
   const { isConnected, messages } = useWebSocket(
-    '/ws/threat',
+    '/api/ws/threat',
     (data) => {
       if (data.type === 'threat_update') {
         refetchFeeds();
@@ -271,9 +236,9 @@ const ThreatIntelligence: React.FC = () => {
         </Space>
       ),
     },
-    { title: 'Type', dataIndex: 'feedType', key: 'feedType', render: (t: string) => <Tag color="blue">{t.toUpperCase()}</Tag> },
+    { title: 'Type', dataIndex: 'feedType', key: 'feedType', render: (t?: string) => <Tag color="blue">{(t ?? 'unknown').toUpperCase()}</Tag> },
     { title: 'Status', dataIndex: 'status', key: 'status', render: getStatusTag },
-    { title: 'IOCs', dataIndex: 'iocCount', key: 'iocCount', render: (c: number) => c.toLocaleString() },
+    { title: 'IOCs', dataIndex: 'iocCount', key: 'iocCount', render: (c?: number) => (c ?? 0).toLocaleString() },
     { title: 'Frequency', dataIndex: 'frequency', key: 'frequency' },
     {
       title: 'Last Updated',
@@ -315,7 +280,7 @@ const ThreatIntelligence: React.FC = () => {
         </Space>
       ),
     },
-    { title: 'Type', dataIndex: 'iocType', key: 'iocType', render: (t: string) => <Tag color={getIOCTypeColor(t)}>{t.toUpperCase()}</Tag> },
+    { title: 'Type', dataIndex: 'iocType', key: 'iocType', render: (t?: string) => <Tag color={getIOCTypeColor(t ?? '')}>{(t ?? 'unknown').toUpperCase()}</Tag> },
     { title: 'Severity', dataIndex: 'severity', key: 'severity', render: getSeverityTag },
     { title: 'Confidence', dataIndex: 'confidence', key: 'confidence', render: (c: number) => `${(c * 100).toFixed(0)}%` },
     {
@@ -362,7 +327,7 @@ const ThreatIntelligence: React.FC = () => {
     },
     { title: 'Severity', dataIndex: 'severity', key: 'severity', render: getSeverityTag },
     { title: 'Status', dataIndex: 'status', key: 'status', render: getStatusTag },
-    { title: 'IOCs', dataIndex: 'iocCount', key: 'iocCount', render: (c: number) => c.toLocaleString() },
+    { title: 'IOCs', dataIndex: 'iocCount', key: 'iocCount', render: (c?: number) => (c ?? 0).toLocaleString() },
     {
       title: 'Created',
       dataIndex: 'createdAt',
@@ -372,7 +337,7 @@ const ThreatIntelligence: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: Alert) => (
+      render: (_: any, record: ThreatAlert) => (
         <Space>
           <Tooltip title="View alert details">
             <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setSelectedAlert(record)} />
@@ -821,7 +786,7 @@ const ThreatIntelligence: React.FC = () => {
         {selectedFeed && (
           <Card>
             <Title level={4}>{selectedFeed.name}</Title>
-            <Tag color="blue">{selectedFeed.feedType.toUpperCase()}</Tag>
+            <Tag color="blue">{(selectedFeed.feedType ?? 'unknown').toUpperCase()}</Tag>
             
             <Divider />
             
@@ -838,7 +803,7 @@ const ThreatIntelligence: React.FC = () => {
                 <Text strong>IOC Count:</Text>
               </Col>
               <Col span={12}>
-                <Text>{selectedFeed.iocCount.toLocaleString()}</Text>
+                <Text>{(selectedFeed.iocCount ?? 0).toLocaleString()}</Text>
               </Col>
             </Row>
             <Row gutter={16} style={{ marginTop: 8 }}>
@@ -854,7 +819,7 @@ const ThreatIntelligence: React.FC = () => {
                 <Text strong>Last Updated:</Text>
               </Col>
               <Col span={12}>
-                <Text>{new Date(selectedFeed.lastUpdated).toLocaleString()}</Text>
+                <Text>{selectedFeed.lastUpdated ? new Date(selectedFeed.lastUpdated).toLocaleString() : '—'}</Text>
               </Col>
             </Row>
             
@@ -900,7 +865,7 @@ const ThreatIntelligence: React.FC = () => {
               </Space>
             </Title>
             <Tag color={getIOCTypeColor(selectedIOC.iocType)}>
-              {selectedIOC.iocType.toUpperCase()}
+              {(selectedIOC.iocType ?? 'unknown').toUpperCase()}
             </Tag>
             
             <Divider />
@@ -968,11 +933,11 @@ const ThreatIntelligence: React.FC = () => {
             <Row gutter={16}>
               <Col span={12}>
                 <Text strong>First Seen:</Text>
-                <Text>{new Date(selectedIOC.firstSeen).toLocaleString()}</Text>
+                <Text>{selectedIOC.firstSeen ? new Date(selectedIOC.firstSeen).toLocaleString() : '—'}</Text>
               </Col>
               <Col span={12}>
                 <Text strong>Last Seen:</Text>
-                <Text>{new Date(selectedIOC.lastSeen).toLocaleString()}</Text>
+                <Text>{selectedIOC.lastSeen ? new Date(selectedIOC.lastSeen).toLocaleString() : '—'}</Text>
               </Col>
             </Row>
             
@@ -1021,7 +986,7 @@ const ThreatIntelligence: React.FC = () => {
                 <Text strong>IOCs:</Text>
               </Col>
               <Col span={12}>
-                <Text>{selectedAlert.iocCount.toLocaleString()}</Text>
+                <Text>{(selectedAlert.iocCount ?? 0).toLocaleString()}</Text>
               </Col>
             </Row>
             <Row gutter={16} style={{ marginTop: 8 }}>
@@ -1029,7 +994,7 @@ const ThreatIntelligence: React.FC = () => {
                 <Text strong>Created:</Text>
               </Col>
               <Col span={12}>
-                <Text>{new Date(selectedAlert.createdAt).toLocaleString()}</Text>
+                <Text>{selectedAlert.createdAt ? new Date(selectedAlert.createdAt).toLocaleString() : '—'}</Text>
               </Col>
             </Row>
             

@@ -129,7 +129,7 @@ const GraphExplorer: React.FC = () => {
   
   // WebSocket for real-time updates
   const { isConnected, messages, sendMessage } = useWebSocket(
-    '/ws/graph',
+    '/api/ws/graph',
     (data) => {
       if (data.type === 'graph_update') {
         refetchNodes();
@@ -180,22 +180,26 @@ const GraphExplorer: React.FC = () => {
   
   // Export functions
   const exportGraph = useCallback((format: 'csv' | 'json' | 'stix') => {
-    const data = { nodes, edges };
-    
+    // The export helpers take flat arrays; combine nodes and edges into rows.
+    const rows = [
+      ...nodes.map((n) => ({ kind: 'node', ...n })),
+      ...edges.map((e) => ({ kind: 'edge', ...e })),
+    ];
+
     if (format === 'csv') {
-      exportToCSV(data, 'graph-data.csv');
+      exportToCSV(rows, 'graph-data.csv');
     } else if (format === 'json') {
-      exportToJSON(data, 'graph-data.json');
+      exportToJSON(rows, 'graph-data.json');
     } else if (format === 'stix') {
-      exportToSTIX(data, 'graph-data-stix.json');
+      exportToSTIX(rows, 'graph-data-stix.json');
     }
-    
+
     message.success(`Graph exported as ${format.toUpperCase()}`);
   }, [nodes, edges]);
   
   // Calculate stats
-  const totalNodes = stats?.node_count || nodes.length;
-  const totalEdges = stats?.edge_count || edges.length;
+  const totalNodes = stats?.nodeCount || nodes.length;
+  const totalEdges = stats?.edgeCount || edges.length;
   const nodeTypeCounts = React.useMemo(() => {
     const counts: Record<string, number> = {};
     nodes.forEach(node => {
@@ -418,7 +422,7 @@ const GraphExplorer: React.FC = () => {
                               <Text code>{edge.target}</Text>
                             </Col>
                             <Col span={10}>
-                              <Text type="secondary">{edge.label}</Text>
+                              <Text type="secondary">{edge.type}</Text>
                             </Col>
                           </Row>
                         </Card>

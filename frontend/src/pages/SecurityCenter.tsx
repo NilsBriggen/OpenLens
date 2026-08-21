@@ -1,190 +1,24 @@
 import React, { useState } from 'react';
-import { Card, Tabs, Button, Space, Typography, Row, Col, Divider, Modal, Form, Input, Select, Table, Tag, Progress, Alert, Spin, Avatar, List, Tooltip } from 'antd';
-import {
-  ShieldOutlined,
-  UserOutlined,
-  TeamOutlined,
-  SafetyOutlined,
-  KeyOutlined,
-  AuditOutlined,
-  LockOutlined,
-  UnlockOutlined,
-  SearchOutlined,
-  PlusOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  EyeOutlined,
-  FilterOutlined,
-  ExportOutlined,
-  ImportOutlined,
-  SettingOutlined,
-  SyncOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  WarningOutlined
-} from '@ant-design/icons';
+import { Card, Tabs, Button, Space, Typography, Row, Col, Divider, Modal, Form, Input, Select, Table, Tag, Progress, Alert, Spin, Avatar, List, Tooltip, Statistic } from 'antd';
+import { SafetyCertificateOutlined, UserOutlined, TeamOutlined, SafetyOutlined, KeyOutlined, AuditOutlined, LockOutlined, UnlockOutlined, SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FilterOutlined, ExportOutlined, ImportOutlined, SettingOutlined, SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, WarningOutlined, GlobalOutlined, CodeOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { Line, Bar, Pie } from '@ant-design/plots';
+import { Line, Bar as BarBase, Pie } from '@ant-design/plots';
+// The compliance chart passes v1-runtime props the TS config omits.
+const Bar = BarBase as unknown as React.ComponentType<any>;
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
-import Cookies from 'js-cookie';
+import {
+  useUsers, useRoles, usePermissions, useAuditLogs,
+  useCreateUser, useCreateRole, useCreatePermission,
+} from '../hooks/useApi';
 
 const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
+const { Search } = Input;
 
-// API Service
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
-  headers: {
-    'Authorization': `Bearer ${Cookies.get('access_token')}`,
-  },
-});
 
 // Mock data
-const mockUsers = [
-  {
-    id: 'user-1',
-    username: 'admin',
-    email: 'admin@openlens.com',
-    fullName: 'Administrator',
-    role: 'Administrator',
-    status: 'active',
-    lastLogin: '2024-01-15T14:30:00Z',
-    createdAt: '2024-01-01T10:00:00Z',
-    loginCount: 45,
-  },
-  {
-    id: 'user-2',
-    username: 'analyst1',
-    email: 'analyst1@openlens.com',
-    fullName: 'John Smith',
-    role: 'Analyst',
-    status: 'active',
-    lastLogin: '2024-01-15T13:45:00Z',
-    createdAt: '2024-01-02T11:00:00Z',
-    loginCount: 32,
-  },
-  {
-    id: 'user-3',
-    username: 'analyst2',
-    email: 'analyst2@openlens.com',
-    fullName: 'Jane Doe',
-    role: 'Analyst',
-    status: 'inactive',
-    lastLogin: '2024-01-10T09:00:00Z',
-    createdAt: '2024-01-03T14:00:00Z',
-    loginCount: 18,
-  },
-  {
-    id: 'user-4',
-    username: 'viewer1',
-    email: 'viewer1@openlens.com',
-    fullName: 'Bob Johnson',
-    role: 'Viewer',
-    status: 'active',
-    lastLogin: '2024-01-15T12:15:00Z',
-    createdAt: '2024-01-04T09:00:00Z',
-    loginCount: 24,
-  },
-];
-
-const mockRoles = [
-  {
-    id: 'role-1',
-    name: 'Administrator',
-    description: 'Full access to all features and data',
-    permissions: ['*'],
-    userCount: 1,
-  },
-  {
-    id: 'role-2',
-    name: 'Analyst',
-    description: 'Can view and analyze data, create reports',
-    permissions: ['read:data', 'analyze', 'create:reports'],
-    userCount: 2,
-  },
-  {
-    id: 'role-3',
-    name: 'Viewer',
-    description: 'Read-only access to data and reports',
-    permissions: ['read:data', 'read:reports'],
-    userCount: 1,
-  },
-  {
-    id: 'role-4',
-    name: 'Scraper',
-    description: 'Can create and manage scraping jobs',
-    permissions: ['create:jobs', 'manage:jobs', 'read:data'],
-    userCount: 0,
-  },
-];
-
-const mockPermissions = [
-  { id: 'perm-1', name: 'read:data', description: 'Read data from all modules' },
-  { id: 'perm-2', name: 'write:data', description: 'Write data to all modules' },
-  { id: 'perm-3', name: 'delete:data', description: 'Delete data from all modules' },
-  { id: 'perm-4', name: 'analyze', description: 'Run analysis on data' },
-  { id: 'perm-5', name: 'create:reports', description: 'Create reports' },
-  { id: 'perm-6', name: 'manage:users', description: 'Manage users and roles' },
-  { id: 'perm-7', name: 'manage:jobs', description: 'Manage scraping jobs' },
-  { id: 'perm-8', name: 'read:audit', description: 'Read audit logs' },
-  { id: 'perm-9', name: 'manage:settings', description: 'Manage system settings' },
-];
-
-const mockAuditLogs = [
-  {
-    id: 'log-1',
-    timestamp: '2024-01-15T14:30:00Z',
-    user: 'admin',
-    eventType: 'authentication',
-    action: 'login',
-    resource: 'system',
-    details: { ip: '192.168.1.100', status: 'success' },
-    severity: 'info',
-  },
-  {
-    id: 'log-2',
-    timestamp: '2024-01-15T14:25:00Z',
-    user: 'analyst1',
-    eventType: 'data',
-    action: 'read',
-    resource: 'graph',
-    details: { query: 'MATCH (n) RETURN n LIMIT 100' },
-    severity: 'info',
-  },
-  {
-    id: 'log-3',
-    timestamp: '2024-01-15T14:20:00Z',
-    user: 'admin',
-    eventType: 'configuration',
-    action: 'update',
-    resource: 'settings',
-    details: { setting: 'theme', value: 'dark' },
-    severity: 'info',
-  },
-  {
-    id: 'log-4',
-    timestamp: '2024-01-15T14:15:00Z',
-    user: 'analyst2',
-    eventType: 'security',
-    action: 'failed_login',
-    resource: 'system',
-    details: { ip: '192.168.1.200', attempts: 3 },
-    severity: 'warning',
-  },
-  {
-    id: 'log-5',
-    timestamp: '2024-01-15T14:10:00Z',
-    user: 'admin',
-    eventType: 'data',
-    action: 'delete',
-    resource: 'graph',
-    details: { nodes: 5, edges: 10 },
-    severity: 'info',
-  },
-];
-
+// SAMPLE DATA: no backend endpoint exists yet for these metrics.
 const mockEncryptionStats = {
   totalEncrypted: 12453,
   totalDecrypted: 8734,
@@ -209,10 +43,52 @@ const SecurityCenter: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [selectedRole, setSelectedRole] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState(mockUsers);
-  const [roles, setRoles] = useState(mockRoles);
-  const [permissions, setPermissions] = useState(mockPermissions);
-  const [auditLogs, setAuditLogs] = useState(mockAuditLogs);
+  // Live data, adapted to the display shape the tables read. fullName and
+  // loginCount have no backend source yet and render as placeholders.
+  const { data: apiUsers = [] } = useUsers();
+  const { data: apiRoles = [] } = useRoles();
+  const { data: apiPermissions = [] } = usePermissions();
+  const { data: apiAuditLogs = [] } = useAuditLogs(100);
+  const createUserMutation = useCreateUser();
+  const createRoleMutation = useCreateRole();
+  const createPermissionMutation = useCreatePermission();
+
+  const users = React.useMemo(() => apiUsers.map((u) => ({
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    fullName: '',
+    role: (u.roles || []).join(', ') || 'none',
+    status: u.isActive ? 'active' : 'inactive',
+    lastLogin: u.lastLogin ?? ('' as string),
+    createdAt: u.createdAt ?? '',
+    loginCount: 0,
+  })), [apiUsers]);
+
+  const roles = React.useMemo(() => apiRoles.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    permissions: r.permissions || [],
+    userCount: apiUsers.filter((u) => (u.roles || []).includes(r.id)).length,
+  })), [apiRoles, apiUsers]);
+
+  const permissions = React.useMemo(() => apiPermissions.map((perm) => ({
+    id: perm.id,
+    name: perm.name,
+    description: perm.description,
+  })), [apiPermissions]);
+
+  const auditLogs = React.useMemo(() => apiAuditLogs.map((event, index) => ({
+    id: event.id || String(index),
+    timestamp: event.timestamp ?? '',
+    user: event.username || 'system',
+    eventType: event.eventType,
+    action: event.action,
+    resource: event.resource,
+    details: event.details || {},
+    severity: event.severity || 'info',
+  })), [apiAuditLogs]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
 
@@ -494,22 +370,17 @@ const SecurityCenter: React.FC = () => {
     },
   ];
 
-  // Create user
+  // Create user - persists server-side and refreshes the list.
   const createUser = async (values: any) => {
     setLoading(true);
     try {
-      const newUser = {
-        id: `user-${Date.now()}`,
+      await createUserMutation.mutateAsync({
         username: values.username,
+        password: values.password || 'ChangeMe123!',
         email: values.email,
-        fullName: values.fullName,
-        role: values.role,
-        status: 'active',
-        lastLogin: null,
-        createdAt: new Date().toISOString(),
-        loginCount: 0,
-      };
-      setUsers([...users, newUser]);
+        full_name: values.fullName,
+      });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       setUserFormVisible(false);
     } catch (error) {
       console.error('Create user error:', error);
@@ -518,18 +389,15 @@ const SecurityCenter: React.FC = () => {
     }
   };
 
-  // Create role
+  // Create role - persists server-side and refreshes the list.
   const createRole = async (values: any) => {
     setLoading(true);
     try {
-      const newRole = {
-        id: `role-${Date.now()}`,
+      await createRoleMutation.mutateAsync({
         name: values.name,
         description: values.description,
-        permissions: values.permissions || [],
-        userCount: 0,
-      };
-      setRoles([...roles, newRole]);
+      });
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
       setRoleFormVisible(false);
     } catch (error) {
       console.error('Create role error:', error);
@@ -538,16 +406,15 @@ const SecurityCenter: React.FC = () => {
     }
   };
 
-  // Create permission
+  // Create permission - persists server-side and refreshes the list.
   const createPermission = async (values: any) => {
     setLoading(true);
     try {
-      const newPermission = {
-        id: `perm-${Date.now()}`,
+      await createPermissionMutation.mutateAsync({
         name: values.name,
         description: values.description,
-      };
-      setPermissions([...permissions, newPermission]);
+      });
+      queryClient.invalidateQueries({ queryKey: ['permissions'] });
       setPermissionFormVisible(false);
     } catch (error) {
       console.error('Create permission error:', error);
@@ -631,7 +498,7 @@ const SecurityCenter: React.FC = () => {
         <div>
           <Title level={1}>
             <Space>
-              <ShieldOutlined />
+              <SafetyCertificateOutlined />
               Security Center
             </Space>
           </Title>
@@ -1091,6 +958,10 @@ const SecurityCenter: React.FC = () => {
           )}
 
           {activeTab === 'encryption' && (
+            <>
+            <Alert type="info" showIcon style={{ marginBottom: 16 }}
+              message="Sample data"
+              description="Encryption metrics are illustrative - no backend endpoint provides them yet." />
             <div>
               <Title level={4} style={{ marginBottom: 24 }}>Encryption</Title>
               
@@ -1212,6 +1083,7 @@ const SecurityCenter: React.FC = () => {
                 </Row>
               </Card>
             </div>
+          </>
           )}
 
           {activeTab === 'auth' && (
@@ -1460,6 +1332,10 @@ const SecurityCenter: React.FC = () => {
           )}
 
           {activeTab === 'compliance' && (
+            <>
+            <Alert type="info" showIcon style={{ marginBottom: 16 }}
+              message="Sample data"
+              description="Compliance metrics are illustrative - no backend endpoint provides them yet." />
             <div>
               <Title level={4} style={{ marginBottom: 24 }}>Compliance</Title>
               
@@ -1567,19 +1443,12 @@ const SecurityCenter: React.FC = () => {
                 </Space>
               </Card>
             </div>
+          </>
           )}
         </Card>
       </motion.div>
     </div>
   );
 };
-
-// Temporary icon
-const CodeOutlined = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <polyline points="16 18 22 12 16 6" />
-    <polyline points="8 6 2 12 8 18" />
-  </svg>
-);
 
 export default SecurityCenter;

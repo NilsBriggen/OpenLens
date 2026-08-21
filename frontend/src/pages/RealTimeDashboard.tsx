@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Typography, Space, Button, Statistic, Tag, List, Avatar, Spin, Alert } from 'antd';
+import { Row, Col, Card, Typography, Space, Button, Statistic, Tag, List, Avatar, Spin, Alert, Divider } from 'antd';
 import {
   DashboardOutlined,
   SyncOutlined,
@@ -72,7 +72,7 @@ const RealTimeDashboard: React.FC = () => {
       type: 'system',
       title: 'High CPU Usage',
       message: 'CPU usage is at 85% - Consider scaling resources',
-      severity: 'warning',
+      severity: 'medium',
       timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       data: { cpu: 85, memory: 72 },
     },
@@ -128,7 +128,7 @@ const RealTimeDashboard: React.FC = () => {
         data: msg.data,
       }));
       
-      setEvents(prev => [...newEvents, ...prev].slice(0, 50));
+      setEvents(prev => [...(newEvents as RealTimeEvent[]), ...prev].slice(0, 50));
     }
   }, [messages]);
 
