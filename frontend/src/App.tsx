@@ -1,6 +1,6 @@
-import React, { Suspense, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Spin, FloatButton, Badge, theme } from 'antd';
+import React, { Suspense, useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { FloatButton, Badge, theme } from 'antd';
 import { RobotOutlined, BellOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import Cookies from 'js-cookie';
 
@@ -11,8 +11,15 @@ import AppProvider from './providers/AppProvider';
 import MainLayout from './layouts/MainLayout';
 import AuthLayout from './layouts/AuthLayout';
 
+// Components
+import LoadingSpinner from './components/common/LoadingSpinner';
+import ProtectedRoute from './components/common/ProtectedRoute';
+import AIChatAssistant from './components/AIChatAssistant';
+import NotificationCenter from './components/NotificationCenter';
+
 // Pages - Lazy loaded for performance
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const RealTimeDashboard = React.lazy(() => import('./pages/RealTimeDashboard'));
 const GraphExplorer = React.lazy(() => import('./pages/GraphExplorer'));
 const AIAnalytics = React.lazy(() => import('./pages/AIAnalytics'));
 const ScrapingHub = React.lazy(() => import('./pages/ScrapingHub'));
@@ -23,23 +30,17 @@ const Login = React.lazy(() => import('./pages/Login'));
 const Register = React.lazy(() => import('./pages/Register'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 
-// Components
-import LoadingSpinner from './components/common/LoadingSpinner';
-import AIChatAssistant from './components/AIChatAssistant';
-import NotificationCenter from './components/NotificationCenter';
+// Track page for AI context
+const PageTracker: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const location = useLocation();
+  const [currentPage, setCurrentPage] = useState<string>('dashboard');
 
-const App: React.FC = () => {
-  const [aiAssistantVisible, setAiAssistantVisible] = useState(false);
-  const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
-  const [currentPage, setCurrentPage] = useState('dashboard');
-  const [unreadNotifications, setUnreadNotifications] = useState(5);
-
-  const isAuthenticated = !!Cookies.get('access_token');
-
-  // Update current page based on route
-  const handleRouteChange = (path: string) => {
+  useEffect(() => {
+    const path = location.pathname;
     const pageMap: Record<string, string> = {
       '/': 'dashboard',
+      '/dashboard': 'dashboard',
+      '/realtime': 'realtime',
       '/graph': 'graph',
       '/ai': 'ai',
       '/scraping': 'scraping',
@@ -48,154 +49,246 @@ const App: React.FC = () => {
       '/settings': 'settings',
     };
     setCurrentPage(pageMap[path] || 'dashboard');
-  };
+  }, [location.pathname]);
 
+  return React.cloneElement(React.Children.only(children) as React.ReactElement, {
+    currentPage,
+  });
+};
+
+const AppContent: React.FC = () => {
+  const [aiAssistantVisible, setAiAssistantVisible] = useState(false);
+  const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const location = useLocation();
+
+  // Check for notifications on route change
+  useEffect(() => {
+    // In production, this would fetch from the API
+    // For now, we'll use a mock value
+    const mockNotifications = Math.floor(Math.random() * 10);
+    setUnreadNotifications(mockNotifications);
+  }, [location.pathname]);
+
+  return (
+    <>
+      <Suspense fallback={<LoadingSpinner fullScreen />}>
+        <Routes>
+          {/* Public Routes - Only accessible when NOT authenticated */}
+          <Route
+            path="/login"
+            element={
+              <PublicRoute>
+                <AuthLayout>
+                  <Login />
+                </AuthLayout>
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <PublicRoute>
+                <AuthLayout>
+                  <Register />
+                </AuthLayout>
+              </PublicRoute>
+            }
+          />
+
+          {/* Protected Routes - Require authentication */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <Dashboard {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <Dashboard {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/realtime"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <RealTimeDashboard {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/graph"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <GraphExplorer {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ai"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <AIAnalytics {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/scraping"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <ScrapingHub {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/security"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <SecurityCenter {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/threat"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <ThreatIntelligence {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <PageTracker>
+                  {(props: any) => (
+                    <MainLayout>
+                      <Settings {...props} />
+                    </MainLayout>
+                  )}
+                </PageTracker>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* 404 */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+
+        {/* AI Chat Assistant - Available on all authenticated pages */}
+        {Cookies.get('access_token') && (
+          <>
+            <AIChatAssistant
+              visible={aiAssistantVisible}
+              onClose={() => setAiAssistantVisible(false)}
+              context={location.pathname}
+            />
+
+            <NotificationCenter
+              visible={notificationCenterVisible}
+              onClose={() => setNotificationCenterVisible(false)}
+            />
+
+            {/* Float Buttons */}
+            <FloatButton.Group
+              trigger="hover"
+              type="primary"
+              icon={<RobotOutlined />}
+              style={{ right: 24, bottom: 100 }}
+              onClick={() => setAiAssistantVisible(true)}
+              tooltip="AI Assistant"
+            />
+
+            <FloatButton
+              icon={<Badge count={unreadNotifications}><BellOutlined /></Badge>}
+              type="default"
+              style={{ right: 24, bottom: 180 }}
+              onClick={() => setNotificationCenterVisible(true)}
+              tooltip="Notifications"
+            />
+
+            <FloatButton
+              icon={<QuestionCircleOutlined />}
+              type="default"
+              style={{ right: 24, bottom: 260 }}
+              tooltip="Help"
+            />
+          </>
+        )}
+      </Suspense>
+    </>
+  );
+};
+
+// PublicRoute component for routes that should redirect if authenticated
+const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const authenticated = !!Cookies.get('access_token');
+  
+  if (authenticated) {
+    return <Navigate to="/" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const App: React.FC = () => {
   return (
     <AppProvider>
       <Router>
-        <Suspense fallback={<LoadingSpinner fullScreen />}>
-          <Routes>
-            {/* Public Routes */}
-            <Route path="/login" element={<AuthLayout><Login /></AuthLayout>} />
-            <Route path="/register" element={<AuthLayout><Register /></AuthLayout>} />
-            
-            {/* Protected Routes */}
-            <Route
-              path="/"
-              element={
-                isAuthenticated ? (
-                  <MainLayout onRouteChange={handleRouteChange}>
-                    <Dashboard />
-                  </MainLayout>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-            
-            <Route
-              path="/graph"
-              element={
-                isAuthenticated ? (
-                  <MainLayout onRouteChange={handleRouteChange}>
-                    <GraphExplorer />
-                  </MainLayout>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-            
-            <Route
-              path="/ai"
-              element={
-                isAuthenticated ? (
-                  <MainLayout onRouteChange={handleRouteChange}>
-                    <AIAnalytics />
-                  </MainLayout>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-            
-            <Route
-              path="/scraping"
-              element={
-                isAuthenticated ? (
-                  <MainLayout onRouteChange={handleRouteChange}>
-                    <ScrapingHub />
-                  </MainLayout>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-            
-            <Route
-              path="/security"
-              element={
-                isAuthenticated ? (
-                  <MainLayout onRouteChange={handleRouteChange}>
-                    <SecurityCenter />
-                  </MainLayout>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-            
-            <Route
-              path="/threat"
-              element={
-                isAuthenticated ? (
-                  <MainLayout onRouteChange={handleRouteChange}>
-                    <ThreatIntelligence />
-                  </MainLayout>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-            
-            <Route
-              path="/settings"
-              element={
-                isAuthenticated ? (
-                  <MainLayout onRouteChange={handleRouteChange}>
-                    <Settings />
-                  </MainLayout>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-            
-            {/* 404 */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-
-          {/* AI Chat Assistant - Available on all pages */}
-          {isAuthenticated && (
-            <>
-              <AIChatAssistant
-                visible={aiAssistantVisible}
-                onClose={() => setAiAssistantVisible(false)}
-                context={currentPage}
-              />
-              
-              <NotificationCenter
-                visible={notificationCenterVisible}
-                onClose={() => setNotificationCenterVisible(false)}
-              />
-
-              {/* Float Buttons */}
-              <FloatButton.Group
-                trigger="hover"
-                type="primary"
-                icon={<RobotOutlined />}
-                style={{ right: 24, bottom: 100 }}
-                onClick={() => setAiAssistantVisible(true)}
-                tooltip="AI Assistant"
-              />
-
-              <FloatButton
-                icon={<Badge count={unreadNotifications}><BellOutlined /></Badge>}
-                type="default"
-                style={{ right: 24, bottom: 180 }}
-                onClick={() => setNotificationCenterVisible(true)}
-                tooltip="Notifications"
-              />
-
-              <FloatButton
-                icon={<QuestionCircleOutlined />}
-                type="default"
-                style={{ right: 24, bottom: 260 }}
-                tooltip="Help"
-              />
-            </>
-          )}
-        </Suspense>
+        <AppContent />
       </Router>
     </AppProvider>
   );

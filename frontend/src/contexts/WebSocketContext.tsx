@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import Cookies from 'js-cookie';
+import { getWebSocketUrl } from '../lib/apiClient';
 
 interface WebSocketMessage {
   type: string;
   data: any;
   timestamp: string;
+  channel?: string;
 }
 
 interface WebSocketContextType {
@@ -14,6 +16,8 @@ interface WebSocketContextType {
   subscribe: (channel: string) => void;
   unsubscribe: (channel: string) => void;
   subscriptions: string[];
+  reconnect: () => void;
+  reconnectAttempts: number;
 }
 
 const WebSocketContext = createContext<WebSocketContextType>({
@@ -23,6 +27,8 @@ const WebSocketContext = createContext<WebSocketContextType>({
   subscribe: () => {},
   unsubscribe: () => {},
   subscriptions: [],
+  reconnect: () => {},
+  reconnectAttempts: 0,
 });
 
 interface WebSocketProviderProps {
@@ -32,7 +38,7 @@ interface WebSocketProviderProps {
 
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   children,
-  url = 'ws://localhost:8000/ws',
+  url,
 }) => {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -40,10 +46,18 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   const [subscriptions, setSubscriptions] = useState<string[]>([]);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const maxReconnectAttempts = 5;
+  const reconnectDelay = 3000; // 3 seconds
+
+  const getSocketUrl = useCallback((): string => {
+    if (url) {
+      const token = Cookies.get('access_token');
+      return `${url}?token=${token}`;
+    }
+    return getWebSocketUrl('/ws');
+  }, [url]);
 
   const connect = useCallback(() => {
-    const token = Cookies.get('access_token');
-    const wsUrl = `${url}?token=${token}`;
+    const wsUrl = getSocketUrl();
     
     const newSocket = new WebSocket(wsUrl);
     setSocket(newSocket);
@@ -51,7 +65,6 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     newSocket.onopen = () => {
       setIsConnected(true);
       setReconnectAttempts(0);
-      console.log('WebSocket connected');
       
       // Resubscribe to all channels
       subscriptions.forEach(channel => {
@@ -62,7 +75,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     newSocket.onmessage = (event) => {
       try {
         const message: WebSocketMessage = JSON.parse(event.data);
-        setMessages(prev => [...prev, message]);
+        setMessages(prev => [...prev.slice(-99), message]); // Keep last 100 messages
       } catch (error) {
         console.error('WebSocket message parsing error:', error);
       }
@@ -70,14 +83,14 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
 
     newSocket.onclose = () => {
       setIsConnected(false);
-      console.log('WebSocket disconnected');
       
-      // Attempt to reconnect
+      // Attempt to reconnect with exponential backoff
       if (reconnectAttempts < maxReconnectAttempts) {
+        const delay = reconnectDelay * Math.pow(2, reconnectAttempts);
         setTimeout(() => {
           setReconnectAttempts(prev => prev + 1);
           connect();
-        }, 1000 * Math.pow(2, reconnectAttempts));
+        }, delay);
       }
     };
 
@@ -86,13 +99,19 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     };
 
     return newSocket;
-  }, [url, subscriptions, reconnectAttempts]);
+  }, [getSocketUrl, subscriptions, reconnectAttempts]);
 
   const sendMessage = useCallback((message: any) => {
     if (socket && isConnected) {
       socket.send(JSON.stringify(message));
     } else {
       console.warn('WebSocket not connected. Message not sent:', message);
+      // Queue message for when connection is established
+      setTimeout(() => {
+        if (socket && isConnected) {
+          socket.send(JSON.stringify(message));
+        }
+      }, 1000);
     }
   }, [socket, isConnected]);
 
@@ -112,9 +131,20 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     }
   }, [socket, isConnected]);
 
-  // Initialize connection
-  useEffect(() => {
+  const reconnect = useCallback(() => {
+    if (socket) {
+      socket.close();
+    }
+    setReconnectAttempts(0);
     connect();
+  }, [socket, connect]);
+
+  // Initialize connection when authenticated
+  useEffect(() => {
+    const token = Cookies.get('access_token');
+    if (token) {
+      connect();
+    }
     
     return () => {
       if (socket) {
@@ -123,14 +153,13 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     };
   }, [connect]);
 
-  // Cleanup on unmount
+  // Reconnect when token changes
   useEffect(() => {
-    return () => {
-      if (socket) {
-        socket.close();
-      }
-    };
-  }, [socket]);
+    const token = Cookies.get('access_token');
+    if (token && !isConnected) {
+      reconnect();
+    }
+  }, [isConnected, reconnect]);
 
   const value: WebSocketContextType = {
     isConnected,
@@ -139,6 +168,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     subscribe,
     unsubscribe,
     subscriptions,
+    reconnect,
+    reconnectAttempts,
   };
 
   return (
