@@ -10,6 +10,7 @@ from . import scraping_router
 from . import security_router
 from . import threat_router
 from . import system_router
+from . import websocket_router
 
 __all__ = [
     'graph_router',
@@ -17,5 +18,6 @@ __all__ = [
     'scraping_router',
     'security_router',
     'threat_router',
-    'system_router'
+    'system_router',
+    'websocket_router'
 ]
