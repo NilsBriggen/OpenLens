@@ -31,10 +31,14 @@ const TrendChart: React.FC<TrendChartProps> = ({
   area = false,
   tooltip = true,
 }) => {
-  const config: LineConfig = {
+  // @ant-design/plots v1 config typing is stricter than its runtime: a
+  // multi-series line takes a single yField + seriesField, point/area/legend
+  // accept the object forms below, and lineWidth is a valid line style at
+  // runtime. Built as a plain object and asserted to LineConfig.
+  const config = {
     data,
     xField,
-    yField,
+    yField: Array.isArray(yField) ? yField[0] : yField,
     seriesField,
     height,
     color: Array.isArray(color) ? color : [color],
@@ -54,16 +58,12 @@ const TrendChart: React.FC<TrendChartProps> = ({
     tooltip: tooltip ? {
       fields: [xField, ...(Array.isArray(yField) ? yField : [yField])],
     } : false,
-    animation: {
-      appear: {
-        animation: 'path-in',
-        duration: 1000,
-      },
-    },
-    style: {
+    // See Dashboard.tsx: a 'path-in' appear animation calls getTotalLength() on
+    // every element, including non-path point markers, and throws on first draw.
+    lineStyle: {
       lineWidth: 3,
     },
-  };
+  } as unknown as LineConfig;
 
   return (
     <Card

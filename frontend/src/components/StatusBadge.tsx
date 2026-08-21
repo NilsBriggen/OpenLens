@@ -77,7 +77,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
             status={status as any}
             text={showText ? text : undefined}
             color={getColor()}
-            size={size}
+            size={size === 'large' ? 'default' : size}
             style={style}
             className={className}
             count={count}
@@ -161,7 +161,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
             status={status as any}
             text={showText ? text : undefined}
             color={getColor()}
-            size={size}
+            size={size === 'large' ? 'default' : size}
             style={style}
             className={className}
           />

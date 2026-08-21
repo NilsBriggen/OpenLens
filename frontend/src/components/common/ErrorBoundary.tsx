@@ -116,7 +116,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
               </Button>
             </Space>
 
-            {process.env.NODE_ENV === 'development' && (
+            {import.meta.env.DEV && (
               <div style={{ marginTop: 16, padding: 16, background: '#f0f0f0', borderRadius: 8 }}>
                 <Text type="secondary" style={{ fontSize: 12, fontFamily: 'monospace' }}>
                   <pre>{this.state.error?.stack}</pre>
@@ -168,5 +168,6 @@ export const useErrorHandler = (
   return { error, handleError, clearError };
 };
 
-export { withErrorBoundary, useErrorHandler };
+// useErrorHandler is already exported at its declaration above.
+export { withErrorBoundary };
 export default ErrorBoundary;

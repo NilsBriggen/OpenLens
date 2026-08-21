@@ -100,9 +100,11 @@ const Badge: React.FC<BadgeProps> = ({
           style={{
             width: sizeStyles.dot,
             height: sizeStyles.dot,
-            borderRadius: '50%',
             background: getColor(),
             ...getShapeStyles(),
+            // After the spread: a dot is always a circle, whatever the shape
+            // helper returned (the earlier borderRadius was overwritten).
+            borderRadius: '50%',
           }}
         />
       );
@@ -161,7 +163,7 @@ const Badge: React.FC<BadgeProps> = ({
         status={status}
         color={color}
         title={title}
-        size={size}
+        size={size === 'large' ? 'default' : size}
         offset={offset}
         style={{
           ...getShapeStyles(),

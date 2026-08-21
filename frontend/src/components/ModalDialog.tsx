@@ -126,9 +126,11 @@ const ModalDialog: React.FC<ModalDialogProps> = ({
       destroyOnClose={destroyOnClose}
       keyboard={keyboard}
       style={{ borderRadius: 12, ...style }}
-      bodyStyle={{ padding: 24, ...bodyStyle }}
-      headerStyle={headerStyle}
-      footerStyle={footerStyle}
+      styles={{
+        body: { padding: 24, ...bodyStyle },
+        header: headerStyle,
+        footer: footerStyle,
+      }}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}

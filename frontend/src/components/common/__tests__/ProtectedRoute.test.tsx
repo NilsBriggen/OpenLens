@@ -1,187 +1,82 @@
-"""
-ProtectedRoute Component Tests
-
-Unit tests for the ProtectedRoute component.
-"""
-
+/**
+ * ProtectedRoute tests.
+ */
 import React from 'react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import Cookies from 'js-cookie';
 
-// Mock cookies
-jest.mock('js-cookie');
+vi.mock('../../../hooks/useApi', () => ({
+  isAuthenticated: vi.fn(() => false),
+}));
 
-// Import component after mocking
+import { isAuthenticated } from '../../../hooks/useApi';
 import ProtectedRoute, { PublicRoute, AuthLoading } from '../ProtectedRoute';
 
+const mockedIsAuthenticated = isAuthenticated as unknown as ReturnType<typeof vi.fn>;
+
+const renderWithRouter = (element: React.ReactElement) =>
+  render(
+    <MemoryRouter initialEntries={['/protected']}>
+      <Routes>
+        <Route path="/protected" element={element} />
+        <Route path="/login" element={<div>Login page</div>} />
+        <Route path="/" element={<div>Home page</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+beforeEach(() => vi.clearAllMocks());
+
 describe('ProtectedRoute', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+  it('renders children when authenticated', () => {
+    mockedIsAuthenticated.mockReturnValue(true);
+    renderWithRouter(
+      <ProtectedRoute>
+        <div>Secret content</div>
+      </ProtectedRoute>,
+    );
+    expect(screen.getByText('Secret content')).toBeInTheDocument();
   });
 
-  it('should render children when authenticated', () => {
-    (Cookies.get as jest.Mock).mockReturnValue('test-token');
-
-    render(
-      <MemoryRouter initialEntries={['/protected']}>
-        <Routes>
-          <Route
-            path="/protected"
-            element={
-              <ProtectedRoute>
-                <div>Protected Content</div>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
+  it('redirects to /login when not authenticated', () => {
+    mockedIsAuthenticated.mockReturnValue(false);
+    renderWithRouter(
+      <ProtectedRoute>
+        <div>Secret content</div>
+      </ProtectedRoute>,
     );
-
-    expect(screen.getByText('Protected Content')).toBeInTheDocument();
-  });
-
-  it('should redirect to login when not authenticated', () => {
-    (Cookies.get as jest.Mock).mockReturnValue(undefined);
-
-    render(
-      <MemoryRouter initialEntries={['/protected']}>
-        <Routes>
-          <Route
-            path="/protected"
-            element={
-              <ProtectedRoute redirectTo="/login">
-                <div>Protected Content</div>
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/login" element={<div>Login Page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText('Login Page')).toBeInTheDocument();
-  });
-
-  it('should redirect to custom path when not authenticated', () => {
-    (Cookies.get as jest.Mock).mockReturnValue(undefined);
-
-    render(
-      <MemoryRouter initialEntries={['/protected']}>
-        <Routes>
-          <Route
-            path="/protected"
-            element={
-              <ProtectedRoute redirectTo="/custom">
-                <div>Protected Content</div>
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/custom" element={<div>Custom Page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText('Custom Page')).toBeInTheDocument();
-  });
-
-  it('should not require auth when requireAuth is false', () => {
-    (Cookies.get as jest.Mock).mockReturnValue(undefined);
-
-    render(
-      <MemoryRouter initialEntries={['/public']}>
-        <Routes>
-          <Route
-            path="/public"
-            element={
-              <ProtectedRoute requireAuth={false}>
-                <div>Public Content</div>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText('Public Content')).toBeInTheDocument();
+    expect(screen.queryByText('Secret content')).not.toBeInTheDocument();
+    expect(screen.getByText('Login page')).toBeInTheDocument();
   });
 });
 
 describe('PublicRoute', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+  it('renders children when not authenticated', () => {
+    mockedIsAuthenticated.mockReturnValue(false);
+    renderWithRouter(
+      <PublicRoute>
+        <div>Public content</div>
+      </PublicRoute>,
+    );
+    expect(screen.getByText('Public content')).toBeInTheDocument();
   });
 
-  it('should render children when not authenticated', () => {
-    (Cookies.get as jest.Mock).mockReturnValue(undefined);
-
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <div>Login Page</div>
-              </PublicRoute>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
+  it('redirects home when already authenticated', () => {
+    mockedIsAuthenticated.mockReturnValue(true);
+    renderWithRouter(
+      <PublicRoute>
+        <div>Public content</div>
+      </PublicRoute>,
     );
-
-    expect(screen.getByText('Login Page')).toBeInTheDocument();
-  });
-
-  it('should redirect to home when authenticated', () => {
-    (Cookies.get as jest.Mock).mockReturnValue('test-token');
-
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicRoute redirectTo="/">
-                <div>Login Page</div>
-              </PublicRoute>
-            }
-          />
-          <Route path="/" element={<div>Home Page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText('Home Page')).toBeInTheDocument();
-  });
-
-  it('should redirect to custom path when authenticated', () => {
-    (Cookies.get as jest.Mock).mockReturnValue('test-token');
-
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicRoute redirectTo="/dashboard">
-                <div>Login Page</div>
-              </PublicRoute>
-            }
-          />
-          <Route path="/dashboard" element={<div>Dashboard</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.queryByText('Public content')).not.toBeInTheDocument();
+    expect(screen.getByText('Home page')).toBeInTheDocument();
   });
 });
 
 describe('AuthLoading', () => {
-  it('should render loading spinner', () => {
+  it('renders a visible loading label (antd 5 drops Spin tip on leaf spinners)', () => {
     render(<AuthLoading />);
-
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 });

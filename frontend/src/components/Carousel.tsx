@@ -5,7 +5,10 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Carousel as AntCarousel, Button, Space, Typography, Card } from 'antd';
+import { Carousel as AntCarouselBase, Button, Space, Typography, Card } from 'antd';
+// Permissive alias: the OpenLens variant wrappers forward extra props the
+// antd types don't model. They are ignored at runtime.
+const AntCarousel = AntCarouselBase as unknown as React.ComponentType<any>;
 import { LeftOutlined, RightOutlined, PauseOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -22,6 +25,7 @@ interface CarouselItem {
 }
 
 interface CarouselProps {
+  carouselRef?: React.MutableRefObject<any>;
   items: CarouselItem[];
   autoPlay?: boolean;
   autoPlaySpeed?: number;
@@ -413,7 +417,7 @@ export const CardCarousel: React.FC<CardCarouselProps> = ({
       style={props.style}
       className={props.className}
     >
-      <Carousel
+      <AntCarousel
         {...props}
         height={cardHeight}
         slidesToShow={slidesToShow}
@@ -493,7 +497,7 @@ export const CardCarousel: React.FC<CardCarouselProps> = ({
             </Card>
           </motion.div>
         ))}
-      </Carousel>
+      </AntCarousel>
     </motion.div>
   );
 };
@@ -542,7 +546,7 @@ export const ImageCarousel: React.FC<ImageCarouselProps> = ({
       style={props.style}
       className={props.className}
     >
-      <Carousel
+      <AntCarousel
         {...props}
         afterChange={handleAfterChange}
         style={{
@@ -590,7 +594,7 @@ export const ImageCarousel: React.FC<ImageCarouselProps> = ({
             )}
           </motion.div>
         ))}
-      </Carousel>
+      </AntCarousel>
 
       {/* Thumbnails */}
       {thumbnails && images.length > 1 && (
@@ -667,7 +671,7 @@ export const TestimonialCarousel: React.FC<TestimonialCarouselProps> = ({
       style={props.style}
       className={props.className}
     >
-      <Carousel
+      <AntCarousel
         {...props}
         height={300}
       >
@@ -738,13 +742,13 @@ export const TestimonialCarousel: React.FC<TestimonialCarouselProps> = ({
             </Card>
           </motion.div>
         ))}
-      </Carousel>
+      </AntCarousel>
     </motion.div>
   );
 };
 
 // HeroCarousel component (full-width hero carousel)
-interface HeroCarouselProps extends Omit<CarouselProps, 'items' | 'height'> {
+interface HeroCarouselProps extends Omit<CarouselProps, 'items'> {
   items: CarouselItem[];
   overlay?: boolean;
   overlayColor?: string;
@@ -771,7 +775,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
       }}
       className={props.className}
     >
-      <Carousel
+      <AntCarousel
         {...props}
         dots={props.dots !== undefined ? props.dots : true}
         arrows={props.arrows !== undefined ? props.arrows : true}
@@ -860,7 +864,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
             )}
           </motion.div>
         ))}
-      </Carousel>
+      </AntCarousel>
     </motion.div>
   );
 };
@@ -887,7 +891,7 @@ export const VerticalCarousel: React.FC<VerticalCarouselProps> = ({
       }}
       className={props.className}
     >
-      <Carousel
+      <AntCarousel
         {...props}
         vertical={true}
         style={{
@@ -947,7 +951,7 @@ export const VerticalCarousel: React.FC<VerticalCarouselProps> = ({
             </Card>
           </motion.div>
         ))}
-      </Carousel>
+      </AntCarousel>
     </motion.div>
   );
 };

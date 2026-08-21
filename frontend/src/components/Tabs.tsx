@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { toAntSize } from './common/antdProps';
 import { Tabs as AntTabs, Typography, Space, Button, Tooltip, Badge } from 'antd';
 import { PlusOutlined, CloseOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
@@ -144,7 +145,7 @@ const Tabs: React.FC<TabsProps> = ({
           type="text"
           icon={addIcon}
           onClick={handleAddTab}
-          size={size}
+          size={toAntSize(size)}
         />
       );
     }
@@ -164,7 +165,7 @@ const Tabs: React.FC<TabsProps> = ({
         activeKey={internalActiveKey}
         onChange={handleTabChange}
         type={type}
-        size={size}
+        size={toAntSize(size)}
         tabPosition={tabPosition}
         centered={centered}
         animated={animated}

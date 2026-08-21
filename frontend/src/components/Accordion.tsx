@@ -109,7 +109,7 @@ const Accordion: React.FC<AccordionProps> = ({
         accordion={accordion}
         bordered={bordered}
         ghost={ghost}
-        expandIcon={customExpandIcon}
+        expandIcon={customExpandIcon as any}
         expandIconPosition={expandIconPosition}
         style={{
           borderRadius: 12,

@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { toAntSize } from './common/antdProps';
 import { Steps, Button, Space, Typography, Card, Row, Col } from 'antd';
 import { motion } from 'framer-motion';
 
@@ -21,6 +22,8 @@ interface StepItem {
 }
 
 interface StepperProps {
+  /** ProgressStepper variant: render a percent bar above the steps. */
+  showProgress?: boolean;
   items: StepItem[];
   current?: number;
   onChange?: (current: number) => void;
@@ -154,17 +157,17 @@ const Stepper: React.FC<StepperProps> = ({
       >
         <Space>
           {!isFirst && (
-            <Button onClick={handlePrev} size={size}>
+            <Button onClick={handlePrev} size={toAntSize(size)}>
               {prevText}
             </Button>
           )}
           
           {isLast ? (
-            <Button type="primary" onClick={handleNext} size={size}>
+            <Button type="primary" onClick={handleNext} size={toAntSize(size)}>
               {finishText}
             </Button>
           ) : (
-            <Button type="primary" onClick={handleNext} size={size}>
+            <Button type="primary" onClick={handleNext} size={toAntSize(size)}>
               {nextText}
             </Button>
           )}
@@ -185,10 +188,10 @@ const Stepper: React.FC<StepperProps> = ({
         current={internalCurrent}
         onChange={handleChange}
         direction={direction}
-        size={size}
+        size={size === 'small' ? 'small' : 'default'}
         status={status}
         type={type}
-        progressDot={progressDot}
+        progressDot={progressDot as any}
         responsive={responsive}
         items={buildSteps()}
       />
@@ -347,14 +350,14 @@ export const TimelineStepper: React.FC<TimelineStepperProps> = ({
         direction={props.direction || 'horizontal'}
         size={props.size || 'default'}
         status={props.status}
-        progressDot={(icon, status) => (
+        progressDot={(icon, { status }) => (
           <div
             style={{
               width: 24,
               height: 24,
               borderRadius: '50%',
-              background: status === 'finish' ? '#52c41a' : 
-                         status === 'process' ? '#1890ff' : 
+              background: status === 'finish' ? '#52c41a' :
+                         status === 'process' ? '#1890ff' :
                          status === 'error' ? '#f5222d' : '#d9d9d9',
               display: 'flex',
               alignItems: 'center',

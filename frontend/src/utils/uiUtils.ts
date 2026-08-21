@@ -489,21 +489,26 @@ export const deepMerge = <T extends object, U extends object>(
   target: T,
   source: U
 ): T & U => {
-  const output = { ...target } as T & U;
-  
-  for (const key in source) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      if (target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
-        output[key] = deepMerge(target[key], source[key]);
+  // Internal cast: TypeScript cannot prove a write through an intersection's
+  // mapped index is sound, though the public signature (T & U) is correct.
+  const output = { ...target } as Record<string, unknown>;
+  const src = source as Record<string, unknown>;
+
+  for (const key in src) {
+    const value = src[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const existing = output[key];
+      if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        output[key] = deepMerge(existing as object, value as object);
       } else {
-        output[key] = source[key];
+        output[key] = value;
       }
     } else {
-      output[key] = source[key];
+      output[key] = value;
     }
   }
-  
-  return output;
+
+  return output as T & U;
 };
 
 /**
@@ -529,11 +534,11 @@ export const omit = <T extends object, K extends keyof T>(
   obj: T,
   keys: K[]
 ): Omit<T, K> => {
-  const result = { ...obj } as Omit<T, K>;
+  const result = { ...obj } as Record<string, unknown>;
   for (const key of keys) {
-    delete result[key];
+    delete result[key as string];
   }
-  return result;
+  return result as Omit<T, K>;
 };
 
 /**

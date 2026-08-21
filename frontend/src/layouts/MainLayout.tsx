@@ -5,7 +5,7 @@ import {
   ProjectOutlined,
   RobotOutlined,
   SearchOutlined,
-  ShieldOutlined,
+  SafetyCertificateOutlined,
   AlertOutlined,
   SettingOutlined,
   MenuOutlined,
@@ -37,17 +37,24 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import Cookies from 'js-cookie';
 import { motion } from 'framer-motion';
+import { useTheme } from '../hooks/useApi';
 
 const { Header, Sider, Content } = Layout;
 
 interface MainLayoutProps {
   onRouteChange?: (path: string) => void;
   children: React.ReactNode;
-  toggleTheme: () => void;
-  isDarkMode: boolean;
+  // Optional overrides. MainLayout manages theme itself via useTheme, so App
+  // no longer has to thread these through every route (it never did, which
+  // made the theme toggle throw on click).
+  toggleTheme?: () => void;
+  isDarkMode?: boolean;
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMode, onRouteChange }) => {
+  const { theme: currentTheme, toggleTheme: toggleThemeInternal } = useTheme();
+  const resolvedToggleTheme = toggleTheme ?? toggleThemeInternal;
+  const resolvedIsDarkMode = isDarkMode ?? currentTheme === 'dark';
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeKey, setActiveKey] = useState('dashboard');
@@ -112,7 +119,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
       icon: <SettingOutlined />,
     },
     {
-      type: 'divider',
+      type: 'divider' as const,
     },
     {
       key: 'logout',
@@ -174,7 +181,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
     },
     {
       key: 'security',
-      icon: <ShieldOutlined />,
+      icon: <SafetyCertificateOutlined />,
       label: 'Security Center',
       children: [
         { key: 'security-users', label: 'User Management', icon: <TeamOutlined /> },
@@ -182,7 +189,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
         { key: 'security-audit', label: 'Audit Logging', icon: <AuditOutlined /> },
         { key: 'security-encryption', label: 'Encryption', icon: <KeyOutlined /> },
         { key: 'security-auth', label: 'Authentication', icon: <UserOutlined /> },
-        { key: 'security-authorization', label: 'Authorization', icon: <ShieldOutlined /> },
+        { key: 'security-authorization', label: 'Authorization', icon: <SafetyCertificateOutlined /> },
         { key: 'security-compliance', label: 'Compliance', icon: <FileTextOutlined /> },
       ],
     },
@@ -363,8 +370,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
             />
             <Button
               type="text"
-              icon={isDarkMode ? <SunOutlined /> : <MoonOutlined />}
-              onClick={toggleTheme}
+              icon={resolvedIsDarkMode ? <SunOutlined /> : <MoonOutlined />}
+              onClick={resolvedToggleTheme}
               style={{
                 fontSize: 16,
               }}

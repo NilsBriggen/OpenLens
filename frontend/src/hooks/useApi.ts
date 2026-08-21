@@ -16,24 +16,47 @@ import {
   systemEndpoints,
   getWebSocketUrl,
 } from '../lib/apiClient';
+import { useWebSocket as useWebSocketContext } from '../contexts/WebSocketContext';
 
 // ============================================================================
 // Generic API Hooks
 // ============================================================================
 
+import type { AxiosError } from 'axios';
+import type {
+  ApiErrorBody, IOC, ThreatFeed, Alert, AlertRule, GraphNode, GraphEdge,
+  GraphStats, User, Role, Permission, AuditEvent, ScrapeJob, SystemStats,
+} from '../types/api';
+
+/** Error type for every query/mutation - surfaces FastAPI's {detail} envelope. */
+export type ApiError = AxiosError<ApiErrorBody>;
+
+/** Pull the human message out of an API error, preferring the backend's. */
+export const apiErrorMessage = (error: unknown): string | undefined => {
+  const err = error as ApiError | undefined;
+  const body = err?.response?.data;
+  if (body?.message) return body.message;
+  if (typeof body?.detail === 'string') return body.detail;
+  return err?.message;
+};
+
+/** Uniform per-hook query options, so `enabled`/`staleTime` never get dropped. */
+export interface QueryOptions {
+  params?: Record<string, any>;
+  enabled?: boolean;
+  staleTime?: number;
+  cacheTime?: number;
+  retry?: number | false;
+  refetchInterval?: number;
+}
+
 // Generic GET request with React Query
 export const useApiGet = <T>(
   key: string | string[],
   url: string,
-  options?: {
-    params?: Record<string, any>;
-    enabled?: boolean;
-    staleTime?: number;
-    cacheTime?: number;
-    retry?: number | false;
-  }
+  options?: QueryOptions
 ) => {
-  return useQuery<T>({
+  return useQuery<T, ApiError>({
     queryKey: Array.isArray(key) ? key : [key],
     queryFn: async () => {
       const response = await apiClient.get<T>(url, { params: options?.params });
@@ -43,6 +66,7 @@ export const useApiGet = <T>(
     retry: options?.retry ?? 2,
     staleTime: options?.staleTime ?? 5 * 60 * 1000, // 5 minutes
     cacheTime: options?.cacheTime ?? 10 * 60 * 1000, // 10 minutes
+    refetchInterval: options?.refetchInterval,
   });
 };
 
@@ -56,6 +80,24 @@ export const useApiPost = <T, V = any>(url: string, config?: { onSuccess?: (data
     onSuccess: config?.onSuccess,
     onError: (error) => {
       config?.onError?.(error);
+      if (error.message && !error.message.includes('canceled')) {
+        message.error(`Request failed: ${error.message}`);
+      }
+    },
+  });
+};
+
+// GET issued on demand, exposed as a mutation. For fire-on-click reads whose
+// backend routes are GET - callers use .mutateAsync() rather than a query.
+export const useApiGetMutation = <T>(url: string, options?: { params?: Record<string, any> }) => {
+  return useMutation<T, Error, Record<string, any> | void>({
+    mutationFn: async (params) => {
+      const response = await apiClient.get<T>(url, {
+        params: { ...options?.params, ...(params || {}) },
+      });
+      return response.data;
+    },
+    onError: (error) => {
       if (error.message && !error.message.includes('canceled')) {
         message.error(`Request failed: ${error.message}`);
       }
@@ -103,31 +145,35 @@ export const useApiPatch = <T, V = any>(url: string, config?: { onSuccess?: (dat
 // Graph Analytics Hooks
 // ============================================================================
 
-export const useGraphStats = (options?: { enabled?: boolean; refetchInterval?: number }) => {
-  return useApiGet<any>('graph-stats', graphEndpoints.stats, {
+export const useGraphStats = (options?: QueryOptions) => {
+  return useApiGet<GraphStats>('graph-stats', graphEndpoints.stats, {
+    ...options,
     enabled: options?.enabled,
     staleTime: 30 * 1000, // 30 seconds for real-time data
     retry: false,
   });
 };
 
-export const useGraphNodes = (params?: Record<string, any>, options?: { enabled?: boolean }) => {
-  return useApiGet<any[]>('graph-nodes', graphEndpoints.nodes, {
+export const useGraphNodes = (params?: Record<string, any>, options?: QueryOptions) => {
+  return useApiGet<GraphNode[]>('graph-nodes', graphEndpoints.nodes, {
+    ...options,
     params,
     enabled: options?.enabled,
     staleTime: 60 * 1000, // 1 minute
   });
 };
 
-export const useGraphEdges = (params?: Record<string, any>, options?: { enabled?: boolean }) => {
-  return useApiGet<any[]>('graph-edges', graphEndpoints.edges, {
+export const useGraphEdges = (params?: Record<string, any>, options?: QueryOptions) => {
+  return useApiGet<GraphEdge[]>('graph-edges', graphEndpoints.edges, {
+    ...options,
     params,
     enabled: options?.enabled,
     staleTime: 60 * 1000,
   });
 };
 
-export const useGraphQuery = (query: string, params?: Record<string, any>) => {
+// A mutation: callers pass { query, params } to mutateAsync, not to the hook.
+export const useGraphQuery = () => {
   return useApiPost<any, { query: string; params?: Record<string, any> }>(graphEndpoints.query);
 };
 
@@ -188,20 +234,22 @@ export const useNodeClassification = () => {
   );
 };
 
+// On-demand reads (GET endpoints) exposed as mutations - callers fire them
+// with .mutateAsync(), which a useQuery hook does not provide.
 export const useGraphEvolutionPrediction = () => {
-  return useApiGet<any>('graph-evolution-prediction', aiEndpoints.predict.graphEvolution);
+  return useApiGetMutation<any>(aiEndpoints.predict.graphEvolution);
 };
 
 export const useThreatPrediction = () => {
-  return useApiGet<any>('threat-prediction', aiEndpoints.predict.threats);
+  return useApiGetMutation<any>(aiEndpoints.predict.threats);
 };
 
 // ============================================================================
 // Scraping Hooks
 // ============================================================================
 
-export const useScrapeJobs = (params?: Record<string, any>) => {
-  return useApiGet<any[]>('scrape-jobs', scrapingEndpoints.jobs, { params });
+export const useScrapeJobs = (params?: Record<string, any>, options?: QueryOptions) => {
+  return useApiGet<ScrapeJob[]>('scrape-jobs', scrapingEndpoints.jobs, { ...options, params });
 };
 
 export const useCreateScrapeJob = () => {
@@ -229,7 +277,8 @@ export const useScrapeTwitterUser = () => {
 };
 
 export const useScrapeTwitterTrends = () => {
-  return useApiGet<any>('twitter-trends', scrapingEndpoints.twitter.trends);
+  // GET, fired on demand from a button - mutation shape, not a query.
+  return useApiGetMutation<any>(scrapingEndpoints.twitter.trends);
 };
 
 export const useScrapeInstagramUser = () => {
@@ -248,8 +297,8 @@ export const useScrapeInstagramHashtag = () => {
 // Security & Authentication Hooks
 // ============================================================================
 
-export const useUsers = (params?: Record<string, any>) => {
-  return useApiGet<any[]>('users', securityEndpoints.users, { params });
+export const useUsers = (params?: Record<string, any>, options?: QueryOptions) => {
+  return useApiGet<User[]>('users', securityEndpoints.users, { ...options, params });
 };
 
 export const useUser = (userId: string) => {
@@ -273,10 +322,15 @@ export const useLogin = () => {
   
   return useMutation<any, Error, { username: string; password: string }>({
     mutationFn: async (credentials: { username: string; password: string }) => {
-      const response = await apiClient.post(securityEndpoints.token, {
-        username: credentials.username,
-        password: credentials.password,
-        grant_type: 'password',
+      // The token endpoint is an OAuth2 password-flow endpoint, so it takes
+      // form-encoded credentials rather than JSON.
+      const form = new URLSearchParams();
+      form.append('username', credentials.username);
+      form.append('password', credentials.password);
+      form.append('grant_type', 'password');
+
+      const response = await apiClient.post(securityEndpoints.token, form, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
       
       // Store tokens
@@ -338,16 +392,16 @@ export const useCurrentUser = () => {
   });
 };
 
-export const useRoles = () => {
-  return useApiGet<any[]>('roles', securityEndpoints.roles);
+export const useRoles = (options?: QueryOptions) => {
+  return useApiGet<Role[]>('roles', securityEndpoints.roles, options);
 };
 
 export const useCreateRole = () => {
   return useApiPost<any, { name: string; description?: string }>(securityEndpoints.roles);
 };
 
-export const usePermissions = () => {
-  return useApiGet<any[]>('permissions', securityEndpoints.permissions);
+export const usePermissions = (options?: QueryOptions) => {
+  return useApiGet<Permission[]>('permissions', securityEndpoints.permissions, options);
 };
 
 export const useCreatePermission = () => {
@@ -355,7 +409,7 @@ export const useCreatePermission = () => {
 };
 
 export const useAuditLogs = (limit?: number) => {
-  return useApiGet<any[]>('audit-logs', securityEndpoints.audit, {
+  return useApiGet<AuditEvent[]>('audit-logs', securityEndpoints.audit, {
     params: { limit },
   });
 };
@@ -370,20 +424,20 @@ export const useLogAuditEvent = () => {
 // Threat Intelligence Hooks
 // ============================================================================
 
-export const useThreatFeeds = (params?: Record<string, any>) => {
-  return useApiGet<any[]>('threat-feeds', threatEndpoints.feeds, { params });
+export const useThreatFeeds = (params?: Record<string, any>, options?: QueryOptions) => {
+  return useApiGet<ThreatFeed[]>('threat-feeds', threatEndpoints.feeds, { ...options, params });
 };
 
-export const useIOCs = (params?: Record<string, any>) => {
-  return useApiGet<any[]>('iocs', threatEndpoints.iocs, { params });
+export const useIOCs = (params?: Record<string, any>, options?: QueryOptions) => {
+  return useApiGet<IOC[]>('iocs', threatEndpoints.iocs, { ...options, params });
 };
 
-export const useAlerts = (params?: Record<string, any>) => {
-  return useApiGet<any[]>('alerts', threatEndpoints.alerts, { params });
+export const useAlerts = (params?: Record<string, any>, options?: QueryOptions) => {
+  return useApiGet<Alert[]>('alerts', threatEndpoints.alerts, { ...options, params });
 };
 
-export const useThreatRules = () => {
-  return useApiGet<any[]>('threat-rules', threatEndpoints.rules);
+export const useThreatRules = (options?: QueryOptions) => {
+  return useApiGet<AlertRule[]>('threat-rules', threatEndpoints.rules, options);
 };
 
 export const useThreatEnrichment = () => {
@@ -410,7 +464,7 @@ export const useSystemHealth = () => {
 };
 
 export const useSystemStats = () => {
-  return useApiGet<any>('system-stats', systemEndpoints.stats, {
+  return useApiGet<SystemStats>('system-stats', systemEndpoints.stats, {
     staleTime: 60 * 1000, // 1 minute
   });
 };
@@ -427,6 +481,14 @@ export const useSystemLogs = (params?: { level?: string; limit?: number }) => {
 // WebSocket Hook for Real-Time Updates
 // ============================================================================
 
+/**
+ * Adapter over the single app-wide WebSocketProvider connection.
+ *
+ * The previous implementation opened its own socket and re-ran the effect on
+ * every render (onMessage was an inline arrow in every caller's deps), which
+ * spawned a new WebSocket per render. This delegates to the provider's one
+ * managed socket and delivers new messages to `onMessage` as they arrive.
+ */
 export const useWebSocket = (
   path: string,
   onMessage: (data: any) => void,
@@ -434,86 +496,31 @@ export const useWebSocket = (
   onClose?: () => void,
   onError?: (error: Event) => void
 ) => {
-  const [socket, setSocket] = React.useState<WebSocket | null>(null);
-  const [isConnected, setIsConnected] = React.useState(false);
-  const [error, setError] = React.useState<Event | null>(null);
-  const [reconnectAttempts, setReconnectAttempts] = React.useState(0);
-  const maxReconnectAttempts = 5;
-  const reconnectDelay = 3000; // 3 seconds
+  const ctx = useWebSocketContext();
+  const seenRef = React.useRef(0);
+  const onMessageRef = React.useRef(onMessage);
+  onMessageRef.current = onMessage;
 
-  const connect = () => {
-    const wsUrl = getWebSocketUrl(path);
-    const newSocket = new WebSocket(wsUrl);
-    
-    newSocket.onopen = () => {
-      setIsConnected(true);
-      setReconnectAttempts(0);
-      onOpen?.();
-    };
-
-    newSocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        onMessage(data);
-      } catch (err) {
-        console.error('WebSocket message parsing error:', err);
-      }
-    };
-
-    newSocket.onclose = () => {
-      setIsConnected(false);
-      onClose?.();
-      
-      // Auto-reconnect if not too many attempts
-      if (reconnectAttempts < maxReconnectAttempts) {
-        setTimeout(() => {
-          setReconnectAttempts((prev) => prev + 1);
-          connect();
-        }, reconnectDelay);
-      }
-    };
-
-    newSocket.onerror = (err) => {
-      setError(err);
-      onError?.(err);
-    };
-
-    setSocket(newSocket);
-    
-    return () => {
-      newSocket.close();
-    };
-  };
+  // Deliver messages the provider buffered since we last looked.
+  React.useEffect(() => {
+    const fresh = ctx.messages.slice(seenRef.current);
+    seenRef.current = ctx.messages.length;
+    fresh.forEach((msg) => onMessageRef.current(msg));
+  }, [ctx.messages]);
 
   React.useEffect(() => {
-    if (isAuthenticated()) {
-      connect();
-    }
-    
-    return () => {
-      if (socket) {
-        socket.close();
-      }
-    };
-  }, [path, onMessage, onOpen, onClose, onError]);
+    if (ctx.isConnected) onOpen?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx.isConnected]);
 
-  const sendMessage = (message: any) => {
-    if (socket && isConnected) {
-      socket.send(JSON.stringify(message));
-    } else {
-      console.warn('WebSocket not connected. Message not sent:', message);
-    }
+  return {
+    isConnected: ctx.isConnected,
+    messages: ctx.messages,
+    error: null as Event | null,
+    sendMessage: ctx.sendMessage,
+    reconnect: ctx.reconnect,
+    reconnectAttempts: ctx.reconnectAttempts,
   };
-
-  const reconnect = () => {
-    if (socket) {
-      socket.close();
-    }
-    setReconnectAttempts(0);
-    connect();
-  };
-
-  return { socket, isConnected, error, sendMessage, reconnect, reconnectAttempts };
 };
 
 // ============================================================================
@@ -525,20 +532,23 @@ export const useTheme = () => {
   const [primaryColor, setPrimaryColor] = React.useState<string>('#1890ff');
 
   React.useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    const savedColor = localStorage.getItem('primary-color');
-    
+    // window.localStorage, consistently with useLocalStorage below: Node 26
+    // defines a bare `localStorage` global that is undefined without a backing
+    // file, which crashed useTheme under the (jsdom) test environment.
+    const savedTheme = window.localStorage.getItem('theme') as 'light' | 'dark' | null;
+    const savedColor = window.localStorage.getItem('primary-color');
+
     if (savedTheme) setTheme(savedTheme);
     if (savedColor) setPrimaryColor(savedColor);
   }, []);
 
   React.useEffect(() => {
-    localStorage.setItem('theme', theme);
+    window.localStorage.setItem('theme', theme);
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
 
   React.useEffect(() => {
-    localStorage.setItem('primary-color', primaryColor);
+    window.localStorage.setItem('primary-color', primaryColor);
   }, [primaryColor]);
 
   const toggleTheme = () => {
@@ -549,7 +559,9 @@ export const useTheme = () => {
     setPrimaryColor(color);
   };
 
-  return { theme, primaryColor, toggleTheme, setColor, setTheme };
+  const isDark = theme === 'dark';
+
+  return { theme, isDark, primaryColor, toggleTheme, setColor, setTheme };
 };
 
 // ============================================================================

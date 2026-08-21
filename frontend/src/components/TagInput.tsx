@@ -227,7 +227,7 @@ const TagInput: React.FC<TagInputProps> = ({
                   onChange={(e) => setEditValue(e.target.value)}
                   onPressEnter={() => handleSaveEdit(tag.id || tag.value)}
                   onBlur={() => handleSaveEdit(tag.id || tag.value)}
-                  size={size}
+                  size={size === 'default' ? 'middle' : size}
                   style={{ width: 'auto', minWidth: 100 }}
                   autoFocus
                 />
@@ -259,7 +259,7 @@ const TagInput: React.FC<TagInputProps> = ({
             onChange={handleInputChange}
             onKeyDown={handleInputKeyDown}
             placeholder={placeholder}
-            size={size}
+            size={size === 'default' ? 'middle' : size}
             style={{
               width: 'auto',
               minWidth: 100,

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Space, Select, DatePicker, Form, Card, Row, Col, Tag, Tooltip } from 'antd';
+import { Input, Button, Space, Select, DatePicker, Form, Card, Row, Col, Tag, Tooltip, Typography } from 'antd';
+
+const { Text } = Typography;
 import {
   SearchOutlined,
   FilterOutlined,

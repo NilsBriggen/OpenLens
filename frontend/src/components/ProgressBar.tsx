@@ -16,7 +16,7 @@ interface ProgressBarProps {
   type?: 'line' | 'circle' | 'dashboard';
   status?: 'success' | 'exception' | 'normal' | 'active';
   showInfo?: boolean;
-  format?: (percent: number) => string;
+  format?: (percent?: number) => string;
   strokeColor?: string | { from: string; to: string };
   strokeLinecap?: 'round' | 'butt' | 'square';
   strokeWidth?: number;
@@ -76,7 +76,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
   };
 
   // Custom format function
-  const formatPercent = format || ((percent) => `${percent}%`);
+  const formatPercent = format || ((percent?: number) => `${percent ?? 0}%`);
 
   // Render based on type
   switch (type) {
@@ -162,7 +162,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
             <Tooltip title={tooltip}>
               <Progress
                 percent={percent}
-                size={getWidth()}
+                size={getWidth() as number}
                 status={status}
                 showInfo={showInfo}
                 format={formatPercent}
@@ -218,7 +218,7 @@ interface ProgressRingProps {
   strokeColor?: string;
   trailColor?: string;
   text?: string;
-  format?: (percent: number) => string;
+  format?: (percent?: number) => string;
   style?: React.CSSProperties;
 }
 
@@ -236,7 +236,7 @@ export const ProgressRing: React.FC<ProgressRingProps> = ({
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (percent / 100) * circumference;
 
-  const formatPercent = format || ((percent) => `${percent}%`);
+  const formatPercent = format || ((percent?: number) => `${percent ?? 0}%`);
 
   return (
     <motion.div

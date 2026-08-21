@@ -153,7 +153,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
           </Menu>
         }
         trigger={['click']}
-        placement={placement}
+        placement={placement === 'left' ? 'bottomLeft' : placement === 'right' ? 'bottomRight' : placement}
         disabled={disabled}
       >
         {children}

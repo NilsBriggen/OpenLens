@@ -14,6 +14,7 @@ import AuthLayout from './layouts/AuthLayout';
 // Components
 import LoadingSpinner from './components/common/LoadingSpinner';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import AIChatAssistant from './components/AIChatAssistant';
 import NotificationCenter from './components/NotificationCenter';
 
@@ -30,30 +31,35 @@ const Login = React.lazy(() => import('./pages/Login'));
 const Register = React.lazy(() => import('./pages/Register'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 
+const PAGE_MAP: Record<string, string> = {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
+  '/realtime': 'realtime',
+  '/graph': 'graph',
+  '/ai': 'ai',
+  '/scraping': 'scraping',
+  '/security': 'security',
+  '/threat': 'threat',
+  '/settings': 'settings',
+};
+
+type PageTrackerProps = {
+  // Routes below pass a render function; an element child is also accepted.
+  children: ((props: { currentPage: string }) => React.ReactElement) | React.ReactElement;
+};
+
 // Track page for AI context
-const PageTracker: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const PageTracker: React.FC<PageTrackerProps> = ({ children }) => {
   const location = useLocation();
-  const [currentPage, setCurrentPage] = useState<string>('dashboard');
+  // Derived rather than stored in state, so the very first render already has
+  // the correct page instead of lagging one render behind on route changes.
+  const currentPage = PAGE_MAP[location.pathname] || 'dashboard';
 
-  useEffect(() => {
-    const path = location.pathname;
-    const pageMap: Record<string, string> = {
-      '/': 'dashboard',
-      '/dashboard': 'dashboard',
-      '/realtime': 'realtime',
-      '/graph': 'graph',
-      '/ai': 'ai',
-      '/scraping': 'scraping',
-      '/security': 'security',
-      '/threat': 'threat',
-      '/settings': 'settings',
-    };
-    setCurrentPage(pageMap[path] || 'dashboard');
-  }, [location.pathname]);
+  if (typeof children === 'function') {
+    return children({ currentPage });
+  }
 
-  return React.cloneElement(React.Children.only(children) as React.ReactElement, {
-    currentPage,
-  });
+  return React.cloneElement(children, { currentPage } as Partial<unknown>);
 };
 
 const AppContent: React.FC = () => {
@@ -243,8 +249,7 @@ const AppContent: React.FC = () => {
             />
 
             {/* Float Buttons */}
-            <FloatButton.Group
-              trigger="hover"
+            <FloatButton
               type="primary"
               icon={<RobotOutlined />}
               style={{ right: 24, bottom: 100 }}
@@ -287,9 +292,13 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const App: React.FC = () => {
   return (
     <AppProvider>
-      <Router>
-        <AppContent />
-      </Router>
+      {/* Without this, a render error anywhere below unmounts the whole tree
+          and leaves the user looking at a blank page. */}
+      <ErrorBoundary>
+        <Router>
+          <AppContent />
+        </Router>
+      </ErrorBoundary>
     </AppProvider>
   );
 };

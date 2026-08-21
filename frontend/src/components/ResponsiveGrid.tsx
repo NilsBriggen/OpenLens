@@ -48,15 +48,14 @@ const ResponsiveGrid: React.FC<ResponsiveGridProps> = ({
           ? { xs: item.span, sm: item.span, md: item.span, lg: item.span, xl: item.span, xxl: item.span }
           : { xs: 24, sm: 24, md: 12, lg: 8, xl: 6, xxl: 6, ...item.span };
 
-        // Normalize offset
-        const offset = typeof item.offset === 'number'
-          ? { xs: item.offset, sm: item.offset, md: item.offset, lg: item.offset, xl: item.offset, xxl: item.offset }
-          : item.offset;
-
-        // Normalize order
-        const order = typeof item.order === 'number'
-          ? { xs: item.order, sm: item.order, md: item.order, lg: item.order, xl: item.order, xxl: item.order }
-          : item.order;
+        // antd's Col offset/order are single numbers (the responsive spread
+        // belongs on the breakpoint props). Collapse an object form to its
+        // largest defined value.
+        const flatten = (v?: number | Record<string, number | undefined>): number | undefined =>
+          typeof v === 'number' ? v
+            : v ? (v.xxl ?? v.xl ?? v.lg ?? v.md ?? v.sm ?? v.xs) : undefined;
+        const offset = flatten(item.offset);
+        const order = flatten(item.order);
 
         return (
           <Col

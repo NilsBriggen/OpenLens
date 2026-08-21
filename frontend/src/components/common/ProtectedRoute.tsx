@@ -1,8 +1,8 @@
-"""
-ProtectedRoute Component
-
-Handles authentication checks and redirects for protected routes.
-"""
+/**
+ * ProtectedRoute Component
+ *
+ * Handles authentication checks and redirects for protected routes.
+ */
 
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
@@ -67,11 +67,16 @@ export const AuthLoading: React.FC = () => {
   return (
     <div style={{
       display: 'flex',
+      flexDirection: 'column',
+      gap: 16,
       justifyContent: 'center',
       alignItems: 'center',
       minHeight: '100vh',
     }}>
-      <Spin size="large" tip="Loading..." />
+      {/* antd 5 discards Spin's `tip` unless it wraps content or is fullscreen,
+          so render the label as a sibling to keep it visible. */}
+      <Spin size="large" />
+      <span>Loading...</span>
     </div>
   );
 };

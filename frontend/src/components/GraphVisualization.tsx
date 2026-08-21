@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Card, Button, Space, Select, Tooltip, Typography, Row, Col, Divider, Spin, Alert } from 'antd';
+import { Card, Button, Space, Select, Tooltip, Typography, Row, Col, Divider, Spin, Alert, Tag } from 'antd';
 import {
   ProjectOutlined,
   EyeOutlined,
@@ -22,7 +22,7 @@ import { motion } from 'framer-motion';
 const { Text, Title } = Typography;
 const { Option } = Select;
 
-interface NodeData {
+export interface NodeData {
   id: string;
   label: string;
   type?: string;
@@ -30,7 +30,7 @@ interface NodeData {
   [key: string]: any;
 }
 
-interface EdgeData {
+export interface EdgeData {
   id: string;
   source: string;
   target: string;
@@ -40,7 +40,7 @@ interface EdgeData {
   [key: string]: any;
 }
 
-interface GraphData {
+export interface GraphData {
   nodes: NodeData[];
   edges: EdgeData[];
 }
@@ -357,7 +357,7 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
             <CytoscapeComponent
               elements={CytoscapeComponent.normalizeElements(preparedData)}
               style={{ width: '100%', height: '100%' }}
-              cy={(cy) => {
+              cy={(cy: any) => {
                 cyRef.current = cy;
                 setCy(cy);
                 onReady && onReady(cy);

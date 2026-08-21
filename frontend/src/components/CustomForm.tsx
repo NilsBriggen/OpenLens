@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Select, DatePicker, Switch, Button, Space, Card, Typography, Upload, message, Checkbox, InputNumber, Radio } from 'antd';
+import { Form, Input, Select, DatePicker, Switch, Button, Space, Card, Typography, Upload, message, Checkbox, InputNumber, Radio, Row, Col } from 'antd';
 import {
   PlusOutlined,
   MinusCircleOutlined,

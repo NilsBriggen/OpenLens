@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { toAntSize } from './common/antdProps';
 import { Transfer as AntTransfer, Button, Input, Space, Typography, Card, List, Checkbox, Tag } from 'antd';
 import { SearchOutlined, LeftOutlined, RightOutlined, DoubleLeftOutlined, DoubleRightOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
@@ -190,7 +191,7 @@ const Transfer: React.FC<TransferProps> = ({
               prefix={<SearchOutlined />}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              size={size}
+              size={toAntSize(size)}
               style={{ marginBottom: 8 }}
               allowClear
             />
@@ -267,7 +268,7 @@ const Transfer: React.FC<TransferProps> = ({
             icon={<RightOutlined />}
             onClick={() => handleTransfer('right')}
             disabled={selectedKeys.length === 0 || disabled}
-            size={size}
+            size={toAntSize(size)}
             style={{ width: sizeStyles.button, height: sizeStyles.button }}
           />
         )}
@@ -282,7 +283,7 @@ const Transfer: React.FC<TransferProps> = ({
               handleTransfer('right');
             }}
             disabled={sourceItems.length === 0 || disabled}
-            size={size}
+            size={toAntSize(size)}
             style={{ width: sizeStyles.button, height: sizeStyles.button }}
           />
         )}
@@ -293,7 +294,7 @@ const Transfer: React.FC<TransferProps> = ({
             icon={<LeftOutlined />}
             onClick={() => handleTransfer('left')}
             disabled={selectedKeys.length === 0 || disabled}
-            size={size}
+            size={toAntSize(size)}
             style={{ width: sizeStyles.button, height: sizeStyles.button }}
           />
         )}
@@ -308,7 +309,7 @@ const Transfer: React.FC<TransferProps> = ({
               handleTransfer('left');
             }}
             disabled={targetItems.length === 0 || disabled}
-            size={size}
+            size={toAntSize(size)}
             style={{ width: sizeStyles.button, height: sizeStyles.button }}
           />
         )}
@@ -319,7 +320,7 @@ const Transfer: React.FC<TransferProps> = ({
             icon={<RightOutlined />}
             onClick={() => handleTransfer('right')}
             disabled={selectedKeys.length === 0 || disabled}
-            size={size}
+            size={toAntSize(size)}
             style={{ width: sizeStyles.button, height: sizeStyles.button }}
           />
         )}
@@ -457,7 +458,7 @@ export const SimpleTransfer: React.FC<SimpleTransferProps> = ({
           icon={<RightOutlined />}
           onClick={() => onMoveRight && onMoveRight(selectedLeftKeys)}
           disabled={selectedLeftKeys.length === 0}
-          size={size}
+          size={toAntSize(size)}
           style={{ width: sizeStyles.button, height: sizeStyles.button }}
         />
 
@@ -466,7 +467,7 @@ export const SimpleTransfer: React.FC<SimpleTransferProps> = ({
           icon={<DoubleRightOutlined />}
           onClick={onMoveAllRight}
           disabled={leftItems.length === 0}
-          size={size}
+          size={toAntSize(size)}
           style={{ width: sizeStyles.button, height: sizeStyles.button }}
         />
 
@@ -475,7 +476,7 @@ export const SimpleTransfer: React.FC<SimpleTransferProps> = ({
           icon={<LeftOutlined />}
           onClick={() => onMoveLeft && onMoveLeft(selectedRightKeys)}
           disabled={selectedRightKeys.length === 0}
-          size={size}
+          size={toAntSize(size)}
           style={{ width: sizeStyles.button, height: sizeStyles.button }}
         />
 
@@ -484,7 +485,7 @@ export const SimpleTransfer: React.FC<SimpleTransferProps> = ({
           icon={<DoubleLeftOutlined />}
           onClick={onMoveAllLeft}
           disabled={rightItems.length === 0}
-          size={size}
+          size={toAntSize(size)}
           style={{ width: sizeStyles.button, height: sizeStyles.button }}
         />
       </motion.div>

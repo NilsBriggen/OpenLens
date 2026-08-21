@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import Cookies from 'js-cookie';
-import { getWebSocketUrl } from '../lib/apiClient';
+import { getWebSocketUrl, wsEndpoints } from '../lib/apiClient';
 
 interface WebSocketMessage {
   type: string;
@@ -36,130 +36,165 @@ interface WebSocketProviderProps {
   url?: string;
 }
 
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_BASE_DELAY = 3000; // ms
+const MAX_BUFFERED_MESSAGES = 100;
+
+/**
+ * The live socket is held in refs rather than state on purpose.
+ *
+ * Keeping it in state made every connect() call change the identity of the
+ * `connect`/`reconnect` callbacks, which in turn re-ran the effects that call
+ * them - an unbounded connect loop that re-rendered continuously and prevented
+ * the app from painting at all. Refs keep the connection lifecycle out of the
+ * render cycle; only the values the UI actually shows live in state.
+ */
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   children,
   url,
 }) => {
-  const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<WebSocketMessage[]>([]);
   const [subscriptions, setSubscriptions] = useState<string[]>([]);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const maxReconnectAttempts = 5;
-  const reconnectDelay = 3000; // 3 seconds
+
+  const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attemptsRef = useRef(0);
+  const subscriptionsRef = useRef<string[]>([]);
+  // Cleared on unmount so a pending close handler cannot resurrect the socket.
+  const activeRef = useRef(true);
 
   const getSocketUrl = useCallback((): string => {
     if (url) {
       const token = Cookies.get('access_token');
-      return `${url}?token=${token}`;
+      return token ? `${url}?token=${token}` : url;
     }
-    return getWebSocketUrl('/ws');
+    return getWebSocketUrl(wsEndpoints.root);
   }, [url]);
 
   const connect = useCallback(() => {
-    const wsUrl = getSocketUrl();
-    
-    const newSocket = new WebSocket(wsUrl);
-    setSocket(newSocket);
+    if (!activeRef.current) return;
 
-    newSocket.onopen = () => {
-      setIsConnected(true);
+    // Don't stack connections if one is already open or opening.
+    const existing = socketRef.current;
+    if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    const socket = new WebSocket(getSocketUrl());
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      if (!activeRef.current) return;
+      attemptsRef.current = 0;
       setReconnectAttempts(0);
-      
-      // Resubscribe to all channels
-      subscriptions.forEach(channel => {
-        newSocket.send(JSON.stringify({ type: 'subscribe', channel }));
+      setIsConnected(true);
+
+      subscriptionsRef.current.forEach((channel) => {
+        socket.send(JSON.stringify({ type: 'subscribe', channel }));
       });
     };
 
-    newSocket.onmessage = (event) => {
+    socket.onmessage = (event) => {
       try {
         const message: WebSocketMessage = JSON.parse(event.data);
-        setMessages(prev => [...prev.slice(-99), message]); // Keep last 100 messages
+        setMessages((prev) => [...prev.slice(-(MAX_BUFFERED_MESSAGES - 1)), message]);
       } catch (error) {
         console.error('WebSocket message parsing error:', error);
       }
     };
 
-    newSocket.onclose = () => {
-      setIsConnected(false);
-      
-      // Attempt to reconnect with exponential backoff
-      if (reconnectAttempts < maxReconnectAttempts) {
-        const delay = reconnectDelay * Math.pow(2, reconnectAttempts);
-        setTimeout(() => {
-          setReconnectAttempts(prev => prev + 1);
-          connect();
-        }, delay);
+    socket.onclose = () => {
+      if (socketRef.current === socket) {
+        socketRef.current = null;
       }
+      if (!activeRef.current) return;
+
+      setIsConnected(false);
+
+      if (attemptsRef.current >= MAX_RECONNECT_ATTEMPTS) return;
+
+      const delay = RECONNECT_BASE_DELAY * Math.pow(2, attemptsRef.current);
+      attemptsRef.current += 1;
+      setReconnectAttempts(attemptsRef.current);
+
+      reconnectTimerRef.current = setTimeout(connect, delay);
     };
 
-    newSocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
+    socket.onerror = () => {
+      // `onclose` always follows, and handles the retry. Logging the raw Event
+      // here just floods the console during a normal backend restart.
     };
+  }, [getSocketUrl]);
 
-    return newSocket;
-  }, [getSocketUrl, subscriptions, reconnectAttempts]);
+  const reconnect = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    attemptsRef.current = 0;
+    setReconnectAttempts(0);
+
+    const socket = socketRef.current;
+    socketRef.current = null;
+    socket?.close();
+
+    connect();
+  }, [connect]);
 
   const sendMessage = useCallback((message: any) => {
-    if (socket && isConnected) {
+    const socket = socketRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(message));
     } else {
       console.warn('WebSocket not connected. Message not sent:', message);
-      // Queue message for when connection is established
-      setTimeout(() => {
-        if (socket && isConnected) {
-          socket.send(JSON.stringify(message));
-        }
-      }, 1000);
     }
-  }, [socket, isConnected]);
+  }, []);
 
   const subscribe = useCallback((channel: string) => {
-    if (!subscriptions.includes(channel)) {
-      setSubscriptions(prev => [...prev, channel]);
-      if (socket && isConnected) {
-        socket.send(JSON.stringify({ type: 'subscribe', channel }));
-      }
+    if (subscriptionsRef.current.includes(channel)) return;
+
+    subscriptionsRef.current = [...subscriptionsRef.current, channel];
+    setSubscriptions(subscriptionsRef.current);
+
+    const socket = socketRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'subscribe', channel }));
     }
-  }, [socket, isConnected, subscriptions]);
+  }, []);
 
   const unsubscribe = useCallback((channel: string) => {
-    setSubscriptions(prev => prev.filter(c => c !== channel));
-    if (socket && isConnected) {
+    subscriptionsRef.current = subscriptionsRef.current.filter((c) => c !== channel);
+    setSubscriptions(subscriptionsRef.current);
+
+    const socket = socketRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'unsubscribe', channel }));
     }
-  }, [socket, isConnected]);
+  }, []);
 
-  const reconnect = useCallback(() => {
-    if (socket) {
-      socket.close();
-    }
-    setReconnectAttempts(0);
-    connect();
-  }, [socket, connect]);
-
-  // Initialize connection when authenticated
+  // Open the connection once, while authenticated.
   useEffect(() => {
-    const token = Cookies.get('access_token');
-    if (token) {
+    activeRef.current = true;
+
+    if (Cookies.get('access_token')) {
       connect();
     }
-    
+
     return () => {
-      if (socket) {
-        socket.close();
+      activeRef.current = false;
+
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
+
+      const socket = socketRef.current;
+      socketRef.current = null;
+      socket?.close();
     };
   }, [connect]);
-
-  // Reconnect when token changes
-  useEffect(() => {
-    const token = Cookies.get('access_token');
-    if (token && !isConnected) {
-      reconnect();
-    }
-  }, [isConnected, reconnect]);
 
   const value: WebSocketContextType = {
     isConnected,

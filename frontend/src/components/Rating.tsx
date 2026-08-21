@@ -122,7 +122,6 @@ const Rating: React.FC<RatingProps> = ({
           onHoverChange={handleHover}
           onFocus={handleLeave}
           onBlur={handleLeave}
-          tooltip={tooltip}
           tooltips={tooltips}
         />
         {valueDisplay}

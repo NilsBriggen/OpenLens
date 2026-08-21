@@ -137,7 +137,7 @@ Ask me anything about your data!`,
   }, [context]);
 
   // Parse and execute AI commands
-  const parseCommand = useCallback(async (message: string): Promise<string> => {
+  const parseCommand = useCallback(async (message: string): Promise<string | null> => {
     const lowerMessage = message.toLowerCase().trim();
     
     // Check for specific commands that map to backend APIs

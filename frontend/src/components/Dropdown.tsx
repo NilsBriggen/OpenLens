@@ -5,9 +5,10 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Dropdown as AntDropdown, Button, Menu, Space, Typography, Tooltip, Divider } from 'antd';
+import { Dropdown as AntDropdown, Button, Menu, Space, Typography, Tooltip, Divider, Input } from 'antd';
 import { MoreOutlined, DownOutlined, RightOutlined, CheckOutlined } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toAntSize } from './common/antdProps';
 
 const { Text } = Typography;
 
@@ -95,12 +96,9 @@ const Dropdown: React.FC<DropdownProps> = ({
     return null;
   };
 
-  // Filter items based on search
-  const filteredItems = searchable
-    ? filterItemsBySearch(items, searchValue)
-    : items;
-
-  // Filter items recursively
+  // Filter items recursively. Declared before use: the previous order
+  // referenced this const before its initialiser ran, throwing a TDZ
+  // ReferenceError on the first render of any searchable dropdown.
   const filterItemsBySearch = (items: DropdownItem[], search: string): DropdownItem[] => {
     return items
       .map(item => {
@@ -124,6 +122,11 @@ const Dropdown: React.FC<DropdownProps> = ({
       })
       .filter(Boolean) as DropdownItem[];
   };
+
+  // Filter items based on search
+  const filteredItems = searchable
+    ? filterItemsBySearch(items, searchValue)
+    : items;
 
   // Render menu items
   const renderMenuItems = (items: DropdownItem[]) => {
@@ -220,7 +223,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         <AntDropdown
           overlay={menu}
           trigger={trigger}
-          placement={placement}
+          placement={placement === 'left' ? 'bottomLeft' : placement === 'right' ? 'bottomRight' : placement}
           disabled={disabled}
         >
           {children}
@@ -241,7 +244,7 @@ const Dropdown: React.FC<DropdownProps> = ({
       <AntDropdown
         overlay={menu}
         trigger={trigger}
-        placement={placement}
+        placement={placement === 'left' ? 'bottomLeft' : placement === 'right' ? 'bottomRight' : placement}
         disabled={disabled}
       >
         <Button
@@ -304,7 +307,7 @@ export const SplitButton: React.FC<SplitButtonProps> = ({
         onClick={primaryAction?.onClick}
         disabled={disabled || primaryAction?.disabled}
         loading={loading || primaryAction?.loading}
-        size={size}
+        size={toAntSize(size)}
         style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
       >
         {primaryAction?.icon}
@@ -365,7 +368,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({
         items={actions}
         onSelect={onSelect}
         trigger={['click']}
-        placement={placement}
+        placement={placement === 'left' ? 'bottomLeft' : placement === 'right' ? 'bottomRight' : placement}
         disabled={disabled}
         size={size}
       >
@@ -551,7 +554,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   // Sync selected keys with value
   useEffect(() => {
     if (value) {
-      setSelectedKeys(multiple ? (Array.isArray(value) ? value : [value]) : [value]);
+      setSelectedKeys(multiple ? (Array.isArray(value) ? value : [value]) : (Array.isArray(value) ? value : [value]));
     }
   }, [value, multiple]);
 
@@ -609,7 +612,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
         selectable={true}
         selectedKeys={selectedKeys}
         multiple={multiple}
-        buttonText={getSelectedLabels()}
+        buttonText={String(getSelectedLabels() ?? '')}
         buttonIcon={multiple ? undefined : <DownOutlined />}
         buttonProps={{
           style: {

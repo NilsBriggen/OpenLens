@@ -43,14 +43,19 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   }
 
   // Get size styles
-  const getSize = () => {
-    const sizes: Record<string, { text: number | string; avatar: number; input: number }> = {
+  type SizeInfo = { text: 'small' | 'default' | 'large'; avatar: number; input: 'small' | 'default' | 'large' };
+  const getSize = (): SizeInfo => {
+    const sizes: Record<string, SizeInfo> = {
       small: { text: 'small', avatar: 24, input: 'small' },
       default: { text: 'default', avatar: 32, input: 'default' },
       large: { text: 'large', avatar: 40, input: 'large' },
     };
     return sizes[size] || sizes.default;
   };
+
+  // width may be an array (paragraph rows); collapse to a single CSS value.
+  const cssWidth = (fallback: number | string): number | string =>
+    Array.isArray(width) ? (width[0] ?? fallback) : (width ?? fallback);
 
   const sizeInfo = getSize();
 
@@ -75,7 +80,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           <Skeleton.Input
             active={active}
             size={sizeInfo.input as any}
-            style={{ width: width || '100%', height, ...style }}
+            style={{ width: cssWidth('100%'), height, ...style }}
           />
         </motion.div>
       );
@@ -93,7 +98,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
             active={active}
             size={sizeInfo.avatar}
             shape={shape as any}
-            style={{ width: width || sizeInfo.avatar, height: height || sizeInfo.avatar, ...style }}
+            style={{ width: cssWidth(sizeInfo.avatar), height: height || sizeInfo.avatar, ...style }}
           />
         </motion.div>
       );
@@ -126,7 +131,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
         >
           <Skeleton
             active={active}
-            title={{ width: width || '100%' }}
+            title={{ width: cssWidth('100%') }}
             paragraph={false}
           />
         </motion.div>
@@ -144,7 +149,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           <Skeleton.Input
             active={active}
             size={sizeInfo.input as any}
-            style={{ width: width || '100%', height, ...style }}
+            style={{ width: cssWidth('100%'), height, ...style }}
           />
         </motion.div>
       );
@@ -162,7 +167,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
             active={active}
             size={sizeInfo.input as any}
             shape={shape as any}
-            style={{ width: width || 100, height, ...style }}
+            style={{ width: cssWidth(100), height, ...style }}
           />
         </motion.div>
       );
@@ -178,7 +183,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
         >
           <Skeleton.Image
             active={active}
-            style={{ width: width || '100%', height: height || 200, ...style }}
+            style={{ width: cssWidth('100%'), height: height || 200, ...style }}
           />
         </motion.div>
       );

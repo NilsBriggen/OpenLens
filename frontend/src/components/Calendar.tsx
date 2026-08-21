@@ -6,7 +6,7 @@
 
 import React, { useState } from 'react';
 import { Calendar as AntCalendar, Badge, Button, Card, Space, Typography, Select, Tooltip } from 'antd';
-import { LeftOutlined, RightOutlined, TodayOutlined, CalendarOutlined, UnorderedListOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { LeftOutlined, RightOutlined, ScheduleOutlined, CalendarOutlined, UnorderedListOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
 
@@ -26,6 +26,9 @@ interface CalendarEvent {
 }
 
 interface CalendarProps {
+  /** Variant overrides */
+  dateCellRender?: (date: dayjs.Dayjs) => React.ReactNode;
+  disabledDate?: (date: dayjs.Dayjs) => boolean;
   value?: dayjs.Dayjs;
   onChange?: (date: dayjs.Dayjs) => void;
   onSelect?: (date: dayjs.Dayjs) => void;
@@ -124,14 +127,14 @@ const Calendar: React.FC<CalendarProps> = ({
             type="text"
             icon={<LeftOutlined />}
             onClick={() => {
-              const newValue = value.subtract(1, type === 'month' ? 'month' : type === 'year' ? 'year' : 'decade');
+              const newValue = type === 'decade' ? value.subtract(10, 'year') : value.subtract(1, type === 'month' ? 'month' : 'year');
               onChange(newValue);
             }}
           />
           <Button
             type="text"
             onClick={() => {
-              const newValue = value.subtract(1, type === 'month' ? 'month' : type === 'year' ? 'year' : 'decade');
+              const newValue = type === 'decade' ? value.subtract(10, 'year') : value.subtract(1, type === 'month' ? 'month' : 'year');
               onChange(newValue);
             }}
           >
@@ -141,7 +144,7 @@ const Calendar: React.FC<CalendarProps> = ({
             type="text"
             icon={<RightOutlined />}
             onClick={() => {
-              const newValue = value.add(1, type === 'month' ? 'month' : type === 'year' ? 'year' : 'decade');
+              const newValue = type === 'decade' ? value.add(10, 'year') : value.add(1, type === 'month' ? 'month' : 'year');
               onChange(newValue);
             }}
           />
@@ -162,7 +165,7 @@ const Calendar: React.FC<CalendarProps> = ({
           {showToday && (
             <Button
               type="text"
-              icon={<TodayOutlined />}
+              icon={<ScheduleOutlined />}
               onClick={handleToday}
             >
               Today
@@ -219,16 +222,18 @@ const Calendar: React.FC<CalendarProps> = ({
     );
   };
 
-  // Content
+  // Content. antd 5's Calendar mode is 'month' | 'year' (this wrapper's own
+  // 'decade' is a header concept), cellRender replaces dateCellRender, and
+  // headerRender's props type is stricter than the wrapper's callback.
   const content = (
     <AntCalendar
       value={internalValue}
       onChange={handleDateChange}
-      mode={currentMode}
+      mode={currentMode === 'decade' ? 'year' : currentMode}
       fullscreen={fullscreen}
-      headerRender={headerRender || defaultHeaderRender}
-      footerRender={footerRender}
-      dateCellRender={dateCellRender}
+      headerRender={(headerRender || defaultHeaderRender) as any}
+      cellRender={(current, info) =>
+        info.type === 'date' ? dateCellRender(current as dayjs.Dayjs) : info.originNode}
       style={style}
       className={className}
     />

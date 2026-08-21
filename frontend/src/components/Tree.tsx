@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { toAntSize } from './common/antdProps';
 import { Tree as AntTree, Input, Button, Space, Typography, Tooltip, Card, Tag } from 'antd';
 import { SearchOutlined, PlusOutlined, MinusOutlined, FolderOutlined, FileOutlined, FolderOpenOutlined, FileTextOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
@@ -24,6 +25,12 @@ interface TreeNode extends DataNode {
 }
 
 interface TreeProps {
+  /** DragDropTree variant */
+  draggable?: boolean;
+  onDrop?: (info: any) => void;
+  /** AsyncTree variant */
+  loadData?: (node: TreeNode) => Promise<TreeNode[]>;
+  loadingKeys?: React.Key[];
   data?: TreeNode[];
   onSelect?: (selectedKeys: React.Key[], info: any) => void;
   onCheck?: (checkedKeys: React.Key[], info: any) => void;
@@ -83,6 +90,10 @@ const Tree: React.FC<TreeProps> = ({
   className = '',
   size = 'default',
   height,
+  draggable,
+  onDrop,
+  loadData,
+  loadingKeys,
 }) => {
   const [searchValue, setSearchValue] = useState('');
   const [internalExpandedKeys, setInternalExpandedKeys] = useState<React.Key[]>(defaultExpandedKeys || []);
@@ -102,12 +113,8 @@ const Tree: React.FC<TreeProps> = ({
     }
   };
 
-  // Filter tree data based on search
-  const filteredData = searchable && searchValue
-    ? filterTreeData(data, searchValue)
-    : data;
-
-  // Filter tree data recursively
+  // Filter tree data recursively. Declared before use to avoid a TDZ
+  // ReferenceError on the first render of a searchable tree with a value.
   const filterTreeData = (nodes: TreeNode[], search: string): TreeNode[] => {
     return nodes
       .map(node => {
@@ -125,6 +132,11 @@ const Tree: React.FC<TreeProps> = ({
       })
       .filter(Boolean) as TreeNode[];
   };
+
+  // Filter tree data based on search
+  const filteredData = searchable && searchValue
+    ? filterTreeData(data, searchValue)
+    : data;
 
   // Get icon for node
   const getIcon = (node: TreeNode) => {
@@ -157,7 +169,7 @@ const Tree: React.FC<TreeProps> = ({
     return (
       <Space>
         {showIcon && getIcon(node)}
-        <span>{node.name || node.title}</span>
+        <span>{node.name || (typeof node.title === 'function' ? node.title(node) : node.title)}</span>
         {node.count !== undefined && (
           <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>
             {node.count}
@@ -170,6 +182,9 @@ const Tree: React.FC<TreeProps> = ({
   // Build tree data
   const buildTreeData = (nodes: TreeNode[]): DataNode[] => {
     return nodes.map(node => ({
+      // Spread first, then override: `...node` last was clobbering the derived
+      // key/title/children with the raw node's own values.
+      ...node,
       key: node.id || node.key,
       title: getTitle(node),
       children: node.children ? buildTreeData(node.children) : undefined,
@@ -177,7 +192,6 @@ const Tree: React.FC<TreeProps> = ({
       selectable: node.selectable !== undefined ? node.selectable : selectable,
       checkable: node.checkable !== undefined ? node.checkable : checkable,
       isLeaf: node.isLeaf || (!node.children || node.children.length === 0),
-      ...node,
     }));
   };
 
@@ -234,7 +248,7 @@ const Tree: React.FC<TreeProps> = ({
             prefix={<SearchOutlined />}
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
-            size={size}
+            size={toAntSize(size)}
             allowClear
           />
         </div>
@@ -244,7 +258,9 @@ const Tree: React.FC<TreeProps> = ({
       <AntTree
         treeData={buildTreeData(filteredData)}
         onSelect={onSelect}
-        onCheck={onCheck}
+        onCheck={onCheck
+          ? (checked, info) => onCheck(Array.isArray(checked) ? checked : checked.checked, info)
+          : undefined}
         onExpand={handleExpand}
         selectedKeys={selectedKeys}
         checkedKeys={checkedKeys}
@@ -259,7 +275,10 @@ const Tree: React.FC<TreeProps> = ({
         showIcon={false}
         defaultExpandAll={defaultExpandAll}
         autoExpandParent={autoExpandParent}
-        height={height}
+        draggable={draggable}
+        onDrop={onDrop}
+        loadData={loadData as any}
+        height={typeof height === 'number' ? height : undefined}
         style={{
           padding: sizeStyles.padding,
           fontSize: sizeStyles.font,
@@ -346,7 +365,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   const titleRender = (node: FileTreeNode) => (
     <Space>
       {getFileIcon(node)}
-      <span>{node.name || node.title}</span>
+      <span>{node.name || (typeof node.title === 'function' ? node.title(node) : node.title)}</span>
       {getFileInfo(node)}
     </Space>
   );
@@ -411,7 +430,7 @@ export const OrganizationTree: React.FC<OrganizationTreeProps> = ({
       )}
       
       <Space direction="vertical">
-        <span>{node.name || node.title}</span>
+        <span>{node.name || (typeof node.title === 'function' ? node.title(node) : node.title)}</span>
         
         <Space wrap>
           {showRole && node.role && (
@@ -476,7 +495,7 @@ export const CategoryTree: React.FC<CategoryTreeProps> = ({
   const titleRender = (node: CategoryTreeNode) => (
     <Space>
       {node.icon || <FolderOutlined />}
-      <span>{node.name || node.title}</span>
+      <span>{node.name || (typeof node.title === 'function' ? node.title(node) : node.title)}</span>
       {showItemCount && node.itemCount !== undefined && (
         <Tag color="default" style={{ margin: 0, fontSize: 10 }}>
           {node.itemCount}
@@ -532,7 +551,10 @@ export const CheckboxTree: React.FC<CheckboxTreeProps> = ({
             <input
               type="checkbox"
               checked={allChecked}
-              indeterminate={indeterminate}
+              ref={(el) => {
+                // indeterminate is a DOM property, not an attribute.
+                if (el) el.indeterminate = indeterminate;
+              }}
               onChange={handleCheckAll}
             />
             <Text>Select All</Text>

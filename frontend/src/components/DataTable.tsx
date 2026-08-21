@@ -16,7 +16,10 @@ import {
   CopyOutlined,
   PrinterOutlined
 } from '@ant-design/icons';
-import type { TableProps, ColumnType } from 'antd';
+// antd's root export is TableColumnType; ColumnType lives in the table
+// interface submodule. Importing the wrong name made this an error type and
+// silently unchecked every column config in the app.
+import type { TableProps, TableColumnType as ColumnType } from 'antd';
 import type { FilterConfirmProps } from 'antd/es/table/interface';
 import { motion } from 'framer-motion';
 
@@ -334,7 +337,7 @@ const DataTable = <T extends object>(
           label: (
             <Space>
               {visibleColumns.includes(columnKey) && <EyeOutlined style={{ color: '#52c41a' }} />}
-              {column.title}
+              {column.title as React.ReactNode}
             </Space>
           ),
         };

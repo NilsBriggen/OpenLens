@@ -228,7 +228,7 @@ const Card: React.FC<CardProps> = ({
         hoverable={hoverable}
         loading={loading}
         size={size}
-        type={type}
+        type={type === 'default' ? undefined : type}
         headStyle={{
           borderBottom: bordered ? '1px solid var(--border-color)' : 'none',
           ...headStyle,

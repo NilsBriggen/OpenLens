@@ -112,7 +112,7 @@ const HeatmapVisualization: React.FC = () => {
       // Create new heatmap if we have points
       if (points.length > 0) {
         const heatmapPoints = points.map(point => [point.latitude, point.longitude, point.intensity]);
-        map.heat = L.heatLayer(heatmapPoints, {
+        map.heat = L.heatLayer(heatmapPoints as [number, number, number][], {
           radius: 25,
           blur: 15,
           maxZoom: 17,

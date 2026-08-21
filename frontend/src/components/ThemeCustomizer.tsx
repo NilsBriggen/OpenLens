@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Drawer, Button, Typography, Space, Divider, ColorPicker, Switch, Slider, Card, Row, Col, Tooltip } from 'antd';
 import {
   SettingOutlined,
-  PaintOutlined,
+  FormatPainterOutlined,
   SunOutlined,
   MoonOutlined,
   EyeOutlined,
   BorderOutlined,
   FontSizeOutlined,
-  PaletteOutlined
+  BgColorsOutlined
 } from '@ant-design/icons';
 import { useTheme } from '../hooks';
 
@@ -103,7 +103,7 @@ const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ visible, onClose }) =
     <Drawer
       title={
         <Space>
-          <PaletteOutlined style={{ color: '#1890ff' }} />
+          <BgColorsOutlined style={{ color: '#1890ff' }} />
           <Title level={4} style={{ margin: 0 }}>Theme Customizer</Title>
         </Space>
       }
@@ -164,7 +164,7 @@ const ThemeCustomizer: React.FC<ThemeCustomizerProps> = ({ visible, onClose }) =
         <Card size="small" style={{ marginBottom: 16 }}>
           <Title level={5} style={{ margin: 0, marginBottom: 12 }}>
             <Space>
-              <PaintOutlined />
+              <FormatPainterOutlined />
               Colors
             </Space>
           </Title>

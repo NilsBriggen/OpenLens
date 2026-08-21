@@ -81,7 +81,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
             onChange={onChange}
             disabled={disabled}
             loading={loading}
-            size={size}
+            size={size === 'large' ? 'default' : size}
             checkedChildren={checkedChildren || (onText ? <Text style={{ fontSize: 10 }}>{onText}</Text> : undefined)}
             unCheckedChildren={unCheckedChildren || (offText ? <Text style={{ fontSize: 10 }}>{offText}</Text> : undefined)}
             defaultChecked={defaultChecked}
@@ -405,7 +405,7 @@ export const ToggleGroup: React.FC<ToggleGroupProps> = ({
             checked={isSelected(option.value)}
             onChange={() => handleToggle(option.value)}
             disabled={disabled || option.disabled}
-            size={size}
+            size={size === 'large' ? 'default' : size}
             label={option.label}
             labelPosition="right"
             onColor="#1890ff"
@@ -444,7 +444,7 @@ export const OnOffToggle: React.FC<OnOffToggleProps> = ({
       checked={checked}
       onChange={onChange}
       disabled={disabled}
-      size={size}
+      size={size === 'large' ? 'default' : size}
       onColor="#52c41a"
       offColor="#f5222d"
       onText={onText}

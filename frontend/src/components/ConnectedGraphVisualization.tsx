@@ -1,14 +1,15 @@
-"""
-ConnectedGraphVisualization Component
-
-A connected version of GraphVisualization that fetches data from the backend API.
-"""
+/**
+ * ConnectedGraphVisualization Component
+ *
+ * A connected version of GraphVisualization that fetches data from the backend API.
+ */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Space, Select, Tooltip, Typography, Row, Col, Divider, Spin, Alert, Input, Tag } from 'antd';
 import { SyncOutlined, SearchOutlined, FilterOutlined, NodeIndexOutlined, BranchesOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import GraphVisualization, { NodeData, EdgeData, GraphData } from './GraphVisualization';
+import GraphVisualization from './GraphVisualization';
+import type { NodeData, EdgeData, GraphData } from './GraphVisualization';
 import {
   useGraphStats,
   useGraphNodes,
@@ -100,7 +101,7 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
   
   // WebSocket for real-time updates
   const { isConnected, messages } = useWebSocket(
-    '/ws/graph',
+    '/api/ws/graph',
     (data) => {
       // Handle real-time graph updates
       if (data.type === 'graph_update') {
@@ -224,8 +225,10 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
     return { nodes: transformedNodes, edges: transformedEdges };
   }, [nodes, edges, selectedNodeId]);
   
-  // Node color mapping
-  const getNodeColor = (type: string | undefined) => {
+  // Node/edge styling helpers. Declared as `function`s (hoisted) so the
+  // graphData useMemo above can call them regardless of source order - as
+  // consts they threw a TDZ ReferenceError on first render.
+  function getNodeColor(type: string | undefined) {
     const colors: Record<string, string> = {
       person: '#1890ff',
       company: '#52c41a',
@@ -235,11 +238,10 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
       url: '#fa8c16',
       default: '#666',
     };
-    return colors[type || 'default'];
-  };
-  
-  // Node shape mapping
-  const getNodeShape = (type: string | undefined) => {
+    return colors[type || 'default'] ?? colors.default;
+  }
+
+  function getNodeShape(type: string | undefined) {
     const shapes: Record<string, string> = {
       person: 'ellipse',
       company: 'rectangle',
@@ -249,11 +251,10 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
       url: 'ellipse',
       default: 'ellipse',
     };
-    return shapes[type || 'default'];
-  };
-  
-  // Edge color mapping
-  const getEdgeColor = (type: string | undefined) => {
+    return shapes[type || 'default'] ?? shapes.default;
+  }
+
+  function getEdgeColor(type: string | undefined) {
     const colors: Record<string, string> = {
       WORKS_AT: '#52c41a',
       HAS_EMAIL: '#faad14',
@@ -263,8 +264,8 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
       CONNECTED_TO: '#fa8c16',
       default: '#ccc',
     };
-    return colors[type || 'default'];
-  };
+    return colors[type || 'default'] ?? colors.default;
+  }
   
   // Loading state
   const isLoading = statsLoading || nodesLoading || edgesLoading;
@@ -311,7 +312,7 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
               <Card size="small">
                 <Text type="secondary">Nodes</Text>
                 <Title level={3} style={{ margin: '8px 0 0' }}>
-                  {stats.node_count || 0}
+                  {stats?.nodeCount || 0}
                 </Title>
               </Card>
             </Col>
@@ -319,7 +320,7 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
               <Card size="small">
                 <Text type="secondary">Edges</Text>
                 <Title level={3} style={{ margin: '8px 0 0' }}>
-                  {stats.edge_count || 0}
+                  {stats?.edgeCount || 0}
                 </Title>
               </Card>
             </Col>
@@ -333,9 +334,11 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
             </Col>
             <Col span={6}>
               <Card size="small">
-                <Text type="secondary">Density</Text>
+                <Text type="secondary">Avg degree</Text>
                 <Title level={3} style={{ margin: '8px 0 0' }}>
-                  {stats.density ? `${(stats.density * 100).toFixed(2)}%` : '0%'}
+                  {stats?.nodeCount
+                    ? ((2 * (stats.edgeCount || 0)) / stats.nodeCount).toFixed(2)
+                    : '0'}
                 </Title>
               </Card>
             </Col>

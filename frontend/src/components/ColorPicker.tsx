@@ -89,11 +89,17 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
 
   // Get picker component based on type
   const getPicker = () => {
-    const commonProps = {
+    // Typed as any: each react-color picker accepts a different prop
+    // subset; extras are ignored at runtime.
+    const commonProps: any = {
       color: internalValue,
       onChange: handleColorChange,
       disableAlpha,
-      width: width || (type === 'sketch' || type === 'chrome' ? 300 : undefined),
+      // @types/react-color types width as a string; coerce numbers.
+      width: ((): string | undefined => {
+        const w = width ?? (type === 'sketch' || type === 'chrome' ? 300 : undefined);
+        return typeof w === 'number' ? `${w}px` : w;
+      })(),
       colors: presetColors,
     };
 
@@ -166,11 +172,10 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
     >
       <Popover
         content={content}
-        visible={visible}
-        onVisibleChange={setVisible}
+        open={visible}
+        onOpenChange={setVisible}
         placement={placement}
         trigger={trigger}
-        disabled={disabled || readOnly}
       >
         <Space>
           {showPreview && (

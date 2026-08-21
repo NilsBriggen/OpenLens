@@ -6,7 +6,7 @@ import {
   SettingOutlined,
   ExpandOutlined,
   ShrinkOutlined,
-  RefreshOutlined
+  ReloadOutlined
 } from '@ant-design/icons';
 import { motion, PanInfo } from 'framer-motion';
 import { useDrag, useDrop } from 'react-dnd';
@@ -112,7 +112,7 @@ const DashboardWidget: React.FC<WidgetProps> = ({
         {
           key: 'refresh',
           label: 'Refresh',
-          icon: <RefreshOutlined />,
+          icon: <ReloadOutlined />,
         },
         {
           key: 'settings',
@@ -191,7 +191,7 @@ const DashboardWidget: React.FC<WidgetProps> = ({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <Title level={4} style={{ margin: 0 }}>{title}</Title>
             <Space>
-              <Button icon={<RefreshOutlined />} onClick={() => onRefresh(id)} size="small" />
+              <Button icon={<ReloadOutlined />} onClick={() => onRefresh(id)} size="small" />
               <Button icon={<CloseOutlined />} onClick={() => setIsFullscreen(false)} size="small" />
             </Space>
           </div>
@@ -228,7 +228,7 @@ const DashboardWidget: React.FC<WidgetProps> = ({
               <Spin size="small" />
             ) : (
               <Tooltip title="Refresh">
-                <Button type="text" icon={<RefreshOutlined />} onClick={() => onRefresh(id)} size="small" />
+                <Button type="text" icon={<ReloadOutlined />} onClick={() => onRefresh(id)} size="small" />
               </Tooltip>
             )}
             <Dropdown overlay={widgetMenu} trigger={['click']}>

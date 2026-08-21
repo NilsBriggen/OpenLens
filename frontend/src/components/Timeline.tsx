@@ -118,8 +118,8 @@ const Timeline: React.FC<TimelineProps> = ({
       className={className}
     >
       <AntTimeline
-        items={buildItems()}
-        mode={mode}
+        items={buildItems() as any}
+        mode={mode === 'top' || mode === 'bottom' ? 'alternate' : mode}
         pending={pending}
         pendingDot={pendingDot}
         reverse={reverse}
@@ -293,7 +293,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
       className={className}
     >
       <Timeline
-        items={buildItems()}
+        items={buildItems() as any}
         mode={mode}
         animated={animated}
       />
@@ -487,7 +487,7 @@ export const ActivityTimeline: React.FC<ActivityTimelineProps> = ({
       className={className}
     >
       <Timeline
-        items={buildItems()}
+        items={buildItems() as any}
         mode="left"
         animated={animated}
       />
@@ -655,7 +655,7 @@ export const GitTimeline: React.FC<GitTimelineProps> = ({
       className={className}
     >
       <Timeline
-        items={buildItems()}
+        items={buildItems() as any}
         mode="left"
         animated={animated}
       />
@@ -808,7 +808,7 @@ export const HistoryTimeline: React.FC<HistoryTimelineProps> = ({
         </Text>
       ) : (
         <Timeline
-          items={buildItems()}
+          items={buildItems() as any}
           mode="left"
           animated={animated}
         />
