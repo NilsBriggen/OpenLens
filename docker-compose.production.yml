@@ -1,0 +1,252 @@
+version: '3.8'
+
+# Production environment configuration
+# This file extends docker-compose.yml with production-specific settings
+
+services:
+  backend:
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      
+      # Security settings
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      
+      # Rate limiting
+      - RATE_LIMIT_DEFAULT=100
+      - RATE_LIMIT_WINDOW=60
+      - RATE_LIMIT_USER_DEFAULT=1000
+      - RATE_LIMIT_USER_WINDOW=3600
+      
+      # Database settings
+      - POSTGRES_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      
+      # Redis settings
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      
+      # Celery settings
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      
+      # External services
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - TWITTER_CONSUMER_KEY=${TWITTER_CONSUMER_KEY}
+      - TWITTER_CONSUMER_SECRET=${TWITTER_CONSUMER_SECRET}
+      - TWITTER_ACCESS_TOKEN=${TWITTER_ACCESS_TOKEN}
+      - TWITTER_ACCESS_TOKEN_SECRET=${TWITTER_ACCESS_TOKEN_SECRET}
+      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN}
+      
+      # Socket.IO settings
+      - SOCKETIO_ASYNC_MODE=eventlet
+      - SOCKETIO_CORS_ORIGINS=${ALLOWED_ORIGINS:-*}
+    
+    # Use production-optimized command
+    command: gunicorn -w 4 -b 0.0.0.0:5000 -k eventlet --timeout 120 --log-level info app:app
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+  celery_worker:
+    environment:
+      - FLASK_ENV=production
+      - LOG_LEVEL=INFO
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Use multiple workers
+    command: celery -A tasks.celery_app.celery worker --loglevel=info --concurrency=8 --max-tasks-per-child=100
+    
+  celery_beat:
+    environment:
+      - FLASK_ENV=production
+      - LOG_LEVEL=INFO
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    
+  frontend:
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=${API_URL:-http://api.openlens.dev}
+      - REACT_APP_WS_URL=${WS_URL:-ws://api.openlens.dev}
+      - REACT_APP_ENV=production
+    
+    # Use nginx for frontend in production
+    # (In a real implementation, frontend would be served by nginx)
+    
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - NGINX_ENVSUBST_TEMPLATE_DIR=/etc/nginx/templates
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
+    volumes:
+      - ./nginx.production.conf:/etc/nginx/templates/default.conf.template
+      - ./ssl:/etc/nginx/ssl
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    
+  postgres:
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+    
+    # Volume for persistent data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    
+    # Backup configuration
+    command: >
+      -c max_connections=500
+      -c shared_buffers=2GB
+      -c effective_cache_size=6GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=1GB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+
+  neo4j:
+    environment:
+      - NEO4J_AUTH=${NEO4J_USERNAME}/${NEO4J_PASSWORD}
+      - NEO4J_dbms_memory_heap_max__size=8G
+      - NEO4J_dbms_memory_pagecache_size=4G
+      - NEO4J_dbms_connector_bolt_thread__pool__max__size=1000
+      - NEO4J_dbms_connector_bolt_thread__pool__min__size=50
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 12G
+    
+    # Volume for persistent data
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    
+    # JVM options
+    command: >
+      --memory=12G
+      --high-io=true
+
+  redis:
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    
+    # Volume for persistent data
+    volumes:
+      - redis_data:/data
+    
+    # Configuration for production
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru --appendonly yes --save 60 1000
+
+  pgadmin:
+    # Disable in production or use proper authentication
+    profiles:
+      - tools
+
+  prometheus:
+    # Enable in production
+    profiles:
+      - monitoring
+
+  grafana:
+    # Enable in production
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/lib/openlens/postgres
+      o: bind
+  
+  neo4j_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/lib/openlens/neo4j/data
+      o: bind
+  
+  neo4j_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/lib/openlens/neo4j/logs
+      o: bind
+  
+  neo4j_import:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/lib/openlens/neo4j/import
+      o: bind
+  
+  neo4j_plugins:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/lib/openlens/neo4j/plugins
+      o: bind
+  
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/lib/openlens/redis
+      o: bind

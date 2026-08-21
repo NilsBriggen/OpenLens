@@ -1,0 +1,62 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# Rule files
+rule_files:
+  # - "alert.rules"
+  # - "recording.rules"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # OpenLens Backend
+  - job_name: 'openlens-backend'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backend:5000']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # Node Exporter (for system metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # Celery
+  - job_name: 'celery'
+    static_configs:
+      - targets: ['celery-exporter:9540']
+    scrape_interval: 30s
+
+# Remote write configuration (for sending metrics to external services)
+# remote_write:
+#   - url: "https://prometheus.example.com/api/v1/write"
+#     basic_auth:
+#       username: "username"
+#       password: "password"

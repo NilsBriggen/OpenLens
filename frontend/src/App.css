@@ -1,0 +1,454 @@
+/* Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+  color: #333;
+  line-height: 1.6;
+}
+
+/* App Container */
+.App {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Header */
+.App-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2rem;
+  text-align: center;
+}
+
+.App-header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.App-header p {
+  font-size: 1.1rem;
+  opacity: 0.9;
+  margin-bottom: 1rem;
+}
+
+/* API Status */
+.api-status {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.status-badge {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.status-badge.connected {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.status-badge.disconnected {
+  background-color: #F44336;
+  color: white;
+}
+
+.version {
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+}
+
+.celery-badge {
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+}
+
+/* Navigation */
+.App-nav {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.App-nav a {
+  color: white;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  transition: background-color 0.3s;
+  font-weight: 500;
+}
+
+.App-nav a:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Main Content */
+.App-main {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Footer */
+.App-footer {
+  background-color: #333;
+  color: white;
+  text-align: center;
+  padding: 1rem;
+  margin-top: auto;
+}
+
+/* Home Page */
+.home-page {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.home-page h2 {
+  margin-bottom: 1rem;
+  color: #667eea;
+}
+
+.features {
+  margin: 2rem 0;
+}
+
+.features h3 {
+  margin-bottom: 1rem;
+}
+
+.features ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.features li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.getting-started {
+  margin-top: 2rem;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+}
+
+/* Components */
+.metadata-extractor,
+.text-extractor,
+.vk-scraper,
+.graph-visualization,
+.geospatial-map {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.metadata-extractor h2,
+.text-extractor h2,
+.vk-scraper h2,
+.graph-visualization h2,
+.geospatial-map h2 {
+  margin-bottom: 1rem;
+  color: #667eea;
+}
+
+/* Forms */
+.upload-form,
+.text-form,
+.scraper-form {
+  display: flex;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.upload-form input,
+.text-form textarea,
+.scraper-form input {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 1rem;
+  flex: 1;
+  min-width: 250px;
+}
+
+.text-form textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+button {
+  padding: 0.75rem 1.5rem;
+  background-color: #667eea;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #5568d3;
+}
+
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Results */
+.result {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+}
+
+.result.success {
+  border-left: 5px solid #4CAF50;
+}
+
+.result.error {
+  border-left: 5px solid #F44336;
+}
+
+.result h3 {
+  margin-bottom: 1rem;
+}
+
+/* Metadata Result */
+.metadata-result pre {
+  background-color: #f5f5f5;
+  padding: 1rem;
+  border-radius: 5px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.gps-data,
+.timestamp-data,
+.device-data {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: white;
+  border-radius: 5px;
+  border-left: 4px solid #667eea;
+}
+
+/* Text Metadata Result */
+.tag-list,
+.mention-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tag,
+.mention {
+  background-color: #667eea;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 15px;
+  font-size: 0.9rem;
+}
+
+/* VK Scraper */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.tabs button {
+  padding: 0.5rem 1rem;
+  background-color: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.tabs button.active {
+  background-color: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+.profile-card,
+.post-card,
+.user-card {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: white;
+  border-radius: 5px;
+  border-left: 4px solid #667eea;
+}
+
+.post-metrics {
+  display: flex;
+  gap: 1rem;
+  margin: 0.5rem 0;
+  color: #666;
+}
+
+.timestamp {
+  color: #999;
+  font-size: 0.9rem;
+}
+
+/* Graph Visualization */
+.graph-controls {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.graph-container {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin: 1rem 0;
+}
+
+.legend {
+  margin: 1rem 0;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+}
+
+.legend h4 {
+  margin-bottom: 0.5rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.legend-color {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.graph-info {
+  margin-top: 1rem;
+  padding: 0.5rem;
+  background-color: #f5f5f5;
+  border-radius: 5px;
+}
+
+/* Geospatial Map */
+.map-controls {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.map-container {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin: 1rem 0;
+}
+
+.map-info {
+  margin-top: 1rem;
+  padding: 0.5rem;
+  background-color: #f5f5f5;
+  border-radius: 5px;
+}
+
+.map-instructions {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+}
+
+.map-instructions h4 {
+  margin-bottom: 0.5rem;
+}
+
+.map-instructions ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.map-instructions li {
+  padding: 0.25rem 0;
+}
+
+/* Location Popup */
+.location-popup h4 {
+  margin-bottom: 0.5rem;
+  color: #667eea;
+}
+
+.location-popup p {
+  margin: 0.25rem 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .App-header {
+    padding: 1rem;
+  }
+
+  .App-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .App-nav {
+    gap: 0.5rem;
+  }
+
+  .App-nav a {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  .App-main {
+    padding: 1rem;
+  }
+
+  .upload-form,
+  .text-form,
+  .scraper-form {
+    flex-direction: column;
+  }
+
+  .upload-form input,
+  .text-form textarea,
+  .scraper-form input {
+    width: 100%;
+  }
+}

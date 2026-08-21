@@ -1,0 +1,1821 @@
+openapi: 3.0.0
+info:
+  title: OpenLens API
+  description: |
+    OpenLens is a modular OSINT (Open-Source Intelligence) gathering and analysis framework.
+    This API provides endpoints for data collection, processing, analysis, and visualization.
+  version: 1.0.0
+  contact:
+    name: OpenLens Team
+    email: support@openlens.dev
+  license:
+    name: MIT License
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+  - url: https://api.openlens.dev
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization endpoints
+  - name: Metadata Extraction
+    description: Extract metadata from images and text
+  - name: NLP Analysis
+    description: Natural Language Processing analysis endpoints
+  - name: Data Visualization
+    description: Generate visualizations from collected data
+  - name: Social Media Scraping
+    description: Scrape data from various social media platforms
+  - name: API Keys
+    description: Manage API keys for programmatic access
+  - name: Users
+    description: User management endpoints
+  - name: Health
+    description: Health check and monitoring endpoints
+
+paths:
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login with username and password
+      description: Authenticate a user and return JWT tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Use a refresh token to get a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+        '401':
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout and invalidate token
+      description: Invalidate the current access token
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/password-reset/request:
+    post:
+      tags:
+        - Authentication
+      summary: Request password reset
+      description: Send a password reset email with a reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '200':
+          description: Password reset email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/password-reset/verify:
+    post:
+      tags:
+        - Authentication
+      summary: Verify password reset token
+      description: Verify the password reset token is valid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetVerifyRequest'
+      responses:
+        '200':
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/password-reset/complete:
+    post:
+      tags:
+        - Authentication
+      summary: Complete password reset
+      description: Set a new password using the reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetCompleteRequest'
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /extract/metadata:
+    post:
+      tags:
+        - Metadata Extraction
+      summary: Extract EXIF metadata from an image
+      description: Upload an image file to extract EXIF metadata including GPS coordinates, camera info, etc.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file to analyze
+      responses:
+        '200':
+          description: Metadata extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataResponse'
+        '400':
+          description: No file provided or invalid file type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /extract/text:
+    post:
+      tags:
+        - Metadata Extraction
+      summary: Extract geotags and hashtags from text
+      description: Analyze text content to extract geotags, hashtags, mentions, and other metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextExtractionRequest'
+      responses:
+        '200':
+          description: Text metadata extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextExtractionResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /nlp/entities:
+    post:
+      tags:
+        - NLP Analysis
+      summary: Extract entities from text
+      description: Use NLP to extract named entities (people, organizations, locations, dates) from text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntityExtractionRequest'
+      responses:
+        '200':
+          description: Entities extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityExtractionResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /nlp/sentiment:
+    post:
+      tags:
+        - NLP Analysis
+      summary: Analyze sentiment of text
+      description: Perform sentiment analysis on text to determine if it's positive, negative, or neutral
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SentimentAnalysisRequest'
+      responses:
+        '200':
+          description: Sentiment analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SentimentAnalysisResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /nlp/topics:
+    post:
+      tags:
+        - NLP Analysis
+      summary: Extract topics from documents
+      description: Use topic modeling to extract main topics from a collection of documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicExtractionRequest'
+      responses:
+        '200':
+          description: Topics extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicExtractionResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /nlp/keyphrases:
+    post:
+      tags:
+        - NLP Analysis
+      summary: Extract keyphrases from text
+      description: Extract important phrases and keywords from text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeyphraseExtractionRequest'
+      responses:
+        '200':
+          description: Keyphrases extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyphraseExtractionResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /visualize/timeline:
+    post:
+      tags:
+        - Data Visualization
+      summary: Generate timeline data
+      description: Generate timeline data from posts for visualization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimelineRequest'
+      responses:
+        '200':
+          description: Timeline data generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /visualize/heatmap:
+    post:
+      tags:
+        - Data Visualization
+      summary: Generate heatmap data
+      description: Generate geographic heatmap data from posts with location information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeatmapRequest'
+      responses:
+        '200':
+          description: Heatmap data generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeatmapResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /visualize/graph:
+    post:
+      tags:
+        - Data Visualization
+      summary: Generate graph data
+      description: Generate network graph data showing relationships between entities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphRequest'
+      responses:
+        '200':
+          description: Graph data generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /scrape/vk/user:
+    get:
+      tags:
+        - Social Media Scraping
+      summary: Scrape VK user profile
+      description: Get information about a VK user
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+          description: VK username or user ID
+      responses:
+        '200':
+          description: User profile data retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VKUserResponse'
+        '400':
+          description: Invalid username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /scrape/vk/posts:
+    get:
+      tags:
+        - Social Media Scraping
+      summary: Scrape VK user posts
+      description: Get recent posts from a VK user
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+          description: VK username or user ID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Maximum number of posts to retrieve
+      responses:
+        '200':
+          description: Posts retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VKPostsResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /scrape/twitter/tweets:
+    get:
+      tags:
+        - Social Media Scraping
+      summary: Scrape Twitter tweets
+      description: Get recent tweets from a Twitter user
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Twitter username
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Maximum number of tweets to retrieve
+      responses:
+        '200':
+          description: Tweets retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwitterTweetsResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /scrape/instagram/user:
+    get:
+      tags:
+        - Social Media Scraping
+      summary: Scrape Instagram user profile
+      description: Get information about an Instagram user
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Instagram username
+      responses:
+        '200':
+          description: User profile data retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstagramUserResponse'
+        '400':
+          description: Invalid username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/keys:
+    get:
+      tags:
+        - API Keys
+      summary: List API keys for current user
+      description: Get all API keys for the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: API keys retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyListResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - API Keys
+      summary: Create a new API key
+      description: Generate a new API key for the authenticated user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/APIKeyCreateRequest'
+      responses:
+        '201':
+          description: API key created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/keys/{key_id}:
+    get:
+      tags:
+        - API Keys
+      summary: Get API key details
+      description: Get details for a specific API key
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: API key ID
+      responses:
+        '200':
+          description: API key details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - API Keys
+      summary: Delete an API key
+      description: Delete a specific API key
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: API key ID
+      responses:
+        '200':
+          description: API key deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/keys/{key_id}/rotate:
+    post:
+      tags:
+        - API Keys
+      summary: Rotate an API key
+      description: Generate a new API key and invalidate the old one
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: API key ID
+      responses:
+        '200':
+          description: API key rotated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/users:
+    get:
+      tags:
+        - Users
+      summary: List users
+      description: Get a list of all users (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Not authorized (admin only)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Users
+      summary: Create a new user
+      description: Create a new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/users/{user_id}:
+    get:
+      tags:
+        - Users
+      summary: Get user details
+      description: Get details for a specific user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: User ID
+      responses:
+        '200':
+          description: User details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Users
+      summary: Update user
+      description: Update user information
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: User ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Users
+      summary: Delete user
+      description: Delete a user account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: User ID
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check the health of the API and its dependencies
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health/database:
+    get:
+      tags:
+        - Health
+      summary: Database health check
+      description: Check the health of the database connection
+      responses:
+        '200':
+          description: Database is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Database connection failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health/system:
+    get:
+      tags:
+        - Health
+      summary: System health check
+      description: Check system resources and dependencies
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authentication
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for programmatic access
+
+  schemas:
+    # Authentication
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: "testuser"
+        password:
+          type: string
+          format: password
+          example: "securepassword123"
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: JWT access token
+        refresh_token:
+          type: string
+          description: JWT refresh token
+        token_type:
+          type: string
+          example: "Bearer"
+        expires_in:
+          type: integer
+          description: Access token expiration in seconds
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: JWT refresh token
+
+    RefreshTokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: New JWT access token
+        token_type:
+          type: string
+          example: "Bearer"
+        expires_in:
+          type: integer
+          description: Access token expiration in seconds
+
+    PasswordResetRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+
+    PasswordResetVerifyRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: Password reset token
+
+    PasswordResetCompleteRequest:
+      type: object
+      required:
+        - token
+        - new_password
+      properties:
+        token:
+          type: string
+          description: Password reset token
+        new_password:
+          type: string
+          format: password
+          description: New password
+
+    # Metadata Extraction
+    TextExtractionRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text to analyze
+          example: "Check out this #amazing place in Moscow!"
+        extract_geotags:
+          type: boolean
+          default: true
+          description: Whether to extract geotags
+        extract_hashtags:
+          type: boolean
+          default: true
+          description: Whether to extract hashtags
+        extract_mentions:
+          type: boolean
+          default: true
+          description: Whether to extract mentions
+
+    TextExtractionResponse:
+      type: object
+      properties:
+        geotags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Geotag'
+        hashtags:
+          type: array
+          items:
+            type: string
+        mentions:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    MetadataResponse:
+      type: object
+      properties:
+        file_info:
+          type: object
+          properties:
+            filename:
+              type: string
+            size:
+              type: integer
+            mime_type:
+              type: string
+        exif:
+          type: object
+          properties:
+            camera_make:
+              type: string
+            camera_model:
+              type: string
+            focal_length:
+              type: string
+            aperture:
+              type: string
+            iso:
+              type: integer
+            exposure_time:
+              type: string
+        gps:
+          type: object
+          properties:
+            latitude:
+              type: number
+              format: float
+            longitude:
+              type: number
+              format: float
+            altitude:
+              type: number
+              format: float
+            timestamp:
+              type: string
+              format: date-time
+        timestamps:
+          type: object
+          properties:
+            created:
+              type: string
+              format: date-time
+            modified:
+              type: string
+              format: date-time
+
+    # NLP Analysis
+    EntityExtractionRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text to analyze
+        language:
+          type: string
+          default: "en"
+          description: Language of the text
+        entity_types:
+          type: array
+          items:
+            type: string
+          description: Types of entities to extract
+          example: ["PERSON", "ORG", "GPE", "DATE"]
+
+    EntityExtractionResponse:
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entity'
+        text:
+          type: string
+        language:
+          type: string
+
+    SentimentAnalysisRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text to analyze
+        method:
+          type: string
+          default: "vader"
+          description: Sentiment analysis method
+          enum: ["vader", "textblob", "nltk"]
+
+    SentimentAnalysisResponse:
+      type: object
+      properties:
+        text:
+          type: string
+        sentiment:
+          type: string
+          enum: ["positive", "neutral", "negative"]
+        compound:
+          type: number
+          format: float
+          description: Compound score (-1 to 1)
+        positive:
+          type: number
+          format: float
+        negative:
+          type: number
+          format: float
+        neutral:
+          type: number
+          format: float
+        confidence:
+          type: number
+          format: float
+
+    TopicExtractionRequest:
+      type: object
+      required:
+        - documents
+      properties:
+        documents:
+          type: array
+          items:
+            type: string
+          description: List of documents to analyze
+        num_topics:
+          type: integer
+          default: 5
+          description: Number of topics to extract
+        method:
+          type: string
+          default: "lda"
+          description: Topic modeling method
+          enum: ["lda", "nmf", "bertopic"]
+
+    TopicExtractionResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Topic'
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              dominant_topic:
+                type: integer
+              topic_distribution:
+                type: object
+                additionalProperties:
+                  type: number
+                  format: float
+
+    KeyphraseExtractionRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text to analyze
+        num_keyphrases:
+          type: integer
+          default: 10
+          description: Number of keyphrases to extract
+        method:
+          type: string
+          default: "rake"
+          description: Keyphrase extraction method
+          enum: ["rake", "yake", "simple"]
+
+    KeyphraseExtractionResponse:
+      type: object
+      properties:
+        text:
+          type: string
+        keyphrases:
+          type: array
+          items:
+            type: object
+            properties:
+              phrase:
+                type: string
+              score:
+                type: number
+                format: float
+        top_keyphrases:
+          type: array
+          items:
+            type: string
+
+    # Visualization
+    TimelineRequest:
+      type: object
+      properties:
+        platform:
+          type: string
+          description: Platform to filter by
+          enum: ["vk", "twitter", "instagram", "telegram"]
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        limit:
+          type: integer
+          default: 100
+
+    TimelineResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+              title:
+                type: string
+              description:
+                type: string
+              platform:
+                type: string
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+
+    HeatmapRequest:
+      type: object
+      properties:
+        platform:
+          type: string
+          description: Platform to filter by
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        resolution:
+          type: string
+          default: "city"
+          enum: ["country", "region", "city", "street"]
+
+    HeatmapResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              location:
+                type: object
+                properties:
+                  latitude:
+                    type: number
+                    format: float
+                  longitude:
+                    type: number
+                    format: float
+              count:
+                type: integer
+        bounds:
+          type: object
+          properties:
+            min_latitude:
+              type: number
+              format: float
+            max_latitude:
+              type: number
+              format: float
+            min_longitude:
+              type: number
+              format: float
+            max_longitude:
+              type: number
+              format: float
+
+    GraphRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search query to filter posts
+        platform:
+          type: string
+          description: Platform to filter by
+        max_nodes:
+          type: integer
+          default: 100
+          description: Maximum number of nodes in the graph
+        max_edges:
+          type: integer
+          default: 500
+          description: Maximum number of edges in the graph
+
+    GraphResponse:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphEdge'
+
+    # Social Media Scraping
+    VKUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        username:
+          type: string
+        photo:
+          type: string
+        status:
+          type: string
+        followers:
+          type: integer
+        friends:
+          type: integer
+        verified:
+          type: boolean
+        platform_data:
+          type: object
+          additionalProperties: true
+
+    VKPostsResponse:
+      type: object
+      properties:
+        posts:
+          type: array
+          items:
+            $ref: '#/components/schemas/VKPost'
+        total:
+          type: integer
+        has_more:
+          type: boolean
+
+    TwitterTweetsResponse:
+      type: object
+      properties:
+        tweets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tweet'
+        total:
+          type: integer
+        has_more:
+          type: boolean
+
+    InstagramUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        full_name:
+          type: string
+        bio:
+          type: string
+        followers:
+          type: integer
+        following:
+          type: integer
+        posts:
+          type: integer
+        profile_picture:
+          type: string
+        verified:
+          type: boolean
+
+    # API Keys
+    APIKeyCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Name for the API key
+          example: "My Application"
+        permissions:
+          type: array
+          items:
+            type: string
+          description: List of permissions
+          example: ["read", "write", "scrape"]
+        expires_days:
+          type: integer
+          description: Number of days until expiration (null for no expiration)
+
+    APIKeyResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        name:
+          type: string
+        key_prefix:
+          type: string
+          description: First 10 characters of the API key
+        permissions:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+        rate_limit:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        rotated_at:
+          type: string
+          format: date-time
+          nullable: true
+        rotation_count:
+          type: integer
+
+    APIKeyListResponse:
+      type: object
+      properties:
+        api_keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/APIKeyResponse'
+        total:
+          type: integer
+
+    # Users
+    UserCreateRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        full_name:
+          type: string
+        role:
+          type: string
+          default: "user"
+          enum: ["user", "admin"]
+
+    UserUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        is_active:
+          type: boolean
+        role:
+          type: string
+          enum: ["user", "admin"]
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: ["user", "admin", "guest"]
+        is_active:
+          type: boolean
+        is_verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+
+    UserListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserResponse'
+        total:
+          type: integer
+
+    # Health
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: ["healthy", "unhealthy"]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        services:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+              message:
+                type: string
+
+    SystemHealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: ["healthy", "unhealthy"]
+        timestamp:
+          type: string
+          format: date-time
+        system:
+          type: object
+          properties:
+            cpu_usage:
+              type: number
+              format: float
+            memory_usage:
+              type: number
+              format: float
+            disk_usage:
+              type: number
+              format: float
+        dependencies:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              version:
+                type: string
+              status:
+                type: string
+
+    # Common
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Error message"
+        code:
+          type: string
+          example: "ERROR_CODE"
+        details:
+          type: object
+          additionalProperties: true
+
+    # Data Models
+    Geotag:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: float
+        longitude:
+          type: number
+          format: float
+        place_name:
+          type: string
+        city:
+          type: string
+        region:
+          type: string
+        country:
+          type: string
+        country_code:
+          type: string
+
+    Entity:
+      type: object
+      properties:
+        text:
+          type: string
+        entity_type:
+          type: string
+          enum: ["PERSON", "ORG", "GPE", "DATE", "TIME", "MONEY", "PERCENT", "CARDINAL", "ORDINAL"]
+        start_char:
+          type: integer
+        end_char:
+          type: integer
+        confidence:
+          type: number
+          format: float
+
+    Topic:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+        words:
+          type: array
+          items:
+            type: string
+        probability:
+          type: number
+          format: float
+
+    GraphNode:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+          enum: ["user", "post", "hashtag", "location", "entity"]
+        properties:
+          type: object
+          additionalProperties: true
+
+    GraphEdge:
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        type:
+          type: string
+        weight:
+          type: number
+          format: float
+
+    VKPost:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        date:
+          type: string
+          format: date-time
+        likes:
+          type: integer
+        reposts:
+          type: integer
+        comments:
+          type: integer
+        views:
+          type: integer
+        attachments:
+          type: array
+          items:
+            type: object
+
+    Tweet:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        likes:
+          type: integer
+        retweets:
+          type: integer
+        replies:
+          type: integer
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            username:
+              type: string
+            name:
+              type: string

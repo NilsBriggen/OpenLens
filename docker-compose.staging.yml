@@ -1,0 +1,38 @@
+version: '3.8'
+
+# Staging environment configuration
+# This file extends docker-compose.yml with staging-specific settings
+
+services:
+  backend:
+    environment:
+      - FLASK_ENV=staging
+      - FLASK_DEBUG=0
+      - LOG_LEVEL=DEBUG
+    ports:
+      - "5001:5000"  # Different port for staging
+    
+  frontend:
+    environment:
+      - NODE_ENV=staging
+      - REACT_APP_API_URL=http://staging.openlens.dev:5001
+      - REACT_APP_WS_URL=ws://staging.openlens.dev:5001
+    ports:
+      - "3001:80"  # Different port for staging
+    
+  nginx:
+    ports:
+      - "8080:80"  # Different port for staging
+      - "8443:443"
+    
+  postgres:
+    environment:
+      - POSTGRES_USER=staging_user
+      - POSTGRES_PASSWORD=staging_password
+      - POSTGRES_DB=openlens_staging
+    
+  neo4j:
+    environment:
+      - NEO4J_AUTH=neo4j/staging_password
+      - NEO4J_dbms_memory_heap_max__size=2G
+      - NEO4J_dbms_memory_pagecache_size=1G
