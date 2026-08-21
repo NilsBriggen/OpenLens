@@ -66,6 +66,9 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "build:vite": "vite build",
+    "build:analyze": "vite build --mode production --analyze",
+    "dev": "vite",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "lint": "eslint src/**/*.{js,jsx,ts,tsx}",
@@ -92,5 +95,11 @@
   "proxy": "http://localhost:8000",
   "engines": {
     "node": ">=16.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.0",
+    "rollup-plugin-visualizer": "^7.1.1",
+    "vite": "^4.5.14",
+    "vite-bundle-visualizer": "^1.2.1"
   }
 }
