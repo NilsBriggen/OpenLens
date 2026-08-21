@@ -1,0 +1,17 @@
+# API Gateway Requirements
+fastapi>=0.95.0
+uvicorn>=0.21.0
+python-multipart>=0.0.6
+pydantic>=1.10.0
+
+# For OAuth2
+authlib>=1.0.0
+python-jose>=3.3.0
+passlib>=1.7.4
+
+# For CORS
+python-dotenv>=0.21.0
+
+# For system monitoring
+psutil>=5.9.0
+platformdirs>=3.0.0
