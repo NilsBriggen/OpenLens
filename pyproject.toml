@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Only the gateway suite; backend/tests/*.py at the top level target the
+# legacy Flask stack and are not collected.
+testpaths = ["backend/tests/api"]
+pythonpath = ["."]

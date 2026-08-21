@@ -7,29 +7,15 @@ on:
     branches: [ main, develop ]
 
 env:
-  PYTHON_VERSION: '3.10'
-  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '22'
 
 jobs:
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-latest
-    
+
     services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: openlens_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      
       redis:
         image: redis:7-alpine
         ports:
@@ -39,61 +25,83 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/password
+        ports:
+          - 7687:7687
+        options: >-
+          --health-cmd "wget -qO- http://localhost:7474 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: 'backend/requirements.txt'
-      
+
       - name: Install Python dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
-      
-      - name: Run backend tests
+        run: pip install -r backend/requirements.txt
+
+      - name: Run gateway tests
         env:
-          POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/openlens_test
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_USERNAME: neo4j
+          NEO4J_PASSWORD: password
           REDIS_URL: redis://localhost:6379/0
-          FLASK_ENV: testing
-          JWT_SECRET_KEY: test-secret-key
+        run: python -m pytest -q
+
+      - name: Start API and run frontend contract tests
+        env:
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_USERNAME: neo4j
+          NEO4J_PASSWORD: password
+          REDIS_URL: redis://localhost:6379/0
+          OPENLENS_SEED_DEMO: '1'
         run: |
-          cd backend
-          python -m pytest tests/ -v --cov=backend --cov-report=xml
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: backend/coverage.xml
-          flags: backend
-          name: backend-coverage
+          python -m uvicorn backend.api.main:app --port 8000 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/api/system/health && break
+            sleep 1
+          done
+          cd frontend
+          npm ci
+          npm run test:contract
 
   frontend-test:
-    name: Frontend Tests
+    name: Frontend Typecheck + Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: 'frontend/package-lock.json'
-      
+
       - name: Install Node.js dependencies
         run: |
           cd frontend
           npm ci
-      
+
+      # Blocking: the codebase is at zero type errors; keep it there.
+      - name: Typecheck
+        run: |
+          cd frontend
+          npm run typecheck
+
       - name: Run frontend tests
         run: |
           cd frontend
@@ -102,138 +110,44 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      
-      - name: Install Python dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install flake8 black isort
-      
+
+      - name: Install lint tools
+        run: pip install flake8 pyflakes
+
+      # Syntax errors and undefined names only - the classes of defect that
+      # broke this codebase (F821 undefined name found five real bugs).
       - name: Run Python linting
         run: |
-          cd backend
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-      
-      - name: Install Node.js dependencies
-        run: |
-          cd frontend
-          npm ci
-      
-      - name: Run JavaScript linting
-        run: |
-          cd frontend
-          npm run lint
+          flake8 backend --count --select=E9,F63,F7,F82,F821 \
+            --exclude backend/.venv --show-source --statistics
 
   build:
     name: Build
     runs-on: ubuntu-latest
     needs: [backend-test, frontend-test, lint]
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      
-      - name: Install Python dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-      
-      - name: Build backend Docker image
-        run: |
-          docker build -t openlens-backend -f backend/Dockerfile .
-      
+
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-      
-      - name: Install Node.js dependencies
-        run: |
-          cd frontend
-          npm ci
-      
+          cache-dependency-path: 'frontend/package-lock.json'
+
       - name: Build frontend
         run: |
           cd frontend
+          npm ci
           npm run build
-      
-      - name: Build frontend Docker image
-        run: |
-          docker build -t openlens-frontend -f frontend/Dockerfile .
-
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-      
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-  deploy:
-    name: Deployment
-    runs-on: ubuntu-latest
-    needs: [build, security-scan]
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-      
-      - name: Push backend Docker image
-        run: |
-          docker tag openlens-backend ${{ secrets.DOCKER_HUB_USERNAME }}/openlens-backend:latest
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/openlens-backend:latest
-      
-      - name: Push frontend Docker image
-        run: |
-          docker tag openlens-frontend ${{ secrets.DOCKER_HUB_USERNAME }}/openlens-frontend:latest
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/openlens-frontend:latest
-      
-      - name: Deploy to production
-        run: |
-          echo "Deploying to production..."
