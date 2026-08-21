@@ -4,15 +4,23 @@ AI/ML Router
 API endpoints for AI/ML modules (7 modules)
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime
 from typing import Dict, Any, List, Optional
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.ai import anomaly_detector, entity_resolver, predictive_analyzer
+from backend.api.capabilities import requires
+from backend.api.deps import require_permission
+from backend.api.schemas import (
+    AnomalyDetectionOut, ChatResponseOut, EntityResolutionOut, LinkScoreOut,
+    Payload, PredictionResultOut,
+)
 
 router = APIRouter()
-security = HTTPBearer()
+
+_ANALYZE = require_permission('ai', 'analyze')
 
 
 # Pydantic Models
@@ -56,26 +64,12 @@ class ChatMessage(BaseModel):
 
 # Chat Endpoint for AI Assistant
 @router.post("/chat")
-async def chat(
-    request: ChatRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> Dict[str, Any]:
+async def chat(request: ChatRequest) -> Dict[str, Any]:
     """
     Chat with the AI Assistant.
-    
-    This endpoint processes natural language queries and returns responses
-    based on the OpenLens data and capabilities.
+
+    Authentication is enforced by the router-level dependency in main.py.
     """
-    # Verify token (optional for development)
-    try:
-        from backend.auth.authentication import decode_token
-        payload = decode_token(credentials.credentials)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except Exception:
-        # For development, allow unauthenticated access
-        pass
-    
     # Process the message based on context and content
     message = request.message.lower()
     
@@ -108,7 +102,7 @@ async def chat(
         "content": response,
         "model": "OpenLens-AI-v7",
         "conversation_id": request.conversation_id or "default",
-        "timestamp": "2024-01-01T00:00:00Z",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
         "tokens_used": len(response.split()),
     }
 
@@ -264,96 +258,126 @@ Click on any module to get started, or use the AI Assistant (me!) to ask questio
 
 
 # Anomaly Detection
-@router.post("/anomalies/detect")
-async def detect_anomalies(request: AnomalyDetectionRequest) -> Dict[str, Any]:
+_SKLEARN_METHODS = {'isolation_forest', 'lof', 'dbscan'}
+_ANOMALY_METHODS = ('statistical', 'zscore', 'iqr', 'isolation_forest',
+                    'lof', 'dbscan', 'graph', 'temporal')
+
+
+@router.post("/anomalies/detect", response_model=AnomalyDetectionOut,
+             dependencies=[_ANALYZE, requires('numpy')])
+async def detect_anomalies(request: AnomalyDetectionRequest):
     """Detect anomalies in data"""
-    if request.method == "statistical":
-        result = anomaly_detector.detect_statistical_anomalies(request.data, request.threshold)
-    elif request.method == "zscore":
-        result = anomaly_detector.detect_zscore_anomalies(request.data, request.threshold)
-    elif request.method == "iqr":
+    method = request.method
+    if method in _SKLEARN_METHODS:
+        from backend.api.capabilities import CAPABILITIES
+        if not CAPABILITIES['sklearn']():
+            from backend.api.errors import FeatureUnavailable
+            raise FeatureUnavailable(feature=f'ai.anomalies.{method}',
+                                     requires=['sklearn'])
+
+    if method == "statistical":
+        result = anomaly_detector.detect_statistical_anomalies(
+            request.data, request.threshold or 3.0)
+    elif method == "zscore":
+        result = anomaly_detector.detect_zscore_anomalies(
+            request.data, request.threshold or 3.0)
+    elif method == "iqr":
         result = anomaly_detector.detect_iqr_anomalies(request.data)
-    elif request.method == "isolation_forest":
+    elif method == "isolation_forest":
         result = anomaly_detector.detect_isolation_forest(request.data)
-    elif request.method == "lof":
+    elif method == "lof":
         result = anomaly_detector.detect_local_outlier_factor(request.data)
-    elif request.method == "dbscan":
+    elif method == "dbscan":
         result = anomaly_detector.detect_dbscan_anomalies(request.data)
-    elif request.method == "graph":
+    elif method == "graph":
         result = anomaly_detector.detect_graph_anomalies()
-    elif request.method == "temporal":
+    elif method == "temporal":
         result = anomaly_detector.detect_temporal_anomalies()
     else:
-        raise HTTPException(status_code=400, detail=f"Unknown method: {request.method}")
-    return {"method": request.method, "anomalies": result}
+        raise HTTPException(status_code=400, detail={
+            'message': f'Unknown method: {method}',
+            'allowed': list(_ANOMALY_METHODS)})
+    return result
 
 
-@router.get("/anomalies/scores")
-async def get_anomaly_scores() -> Dict[str, Any]:
-    """Get anomaly scores for all nodes"""
-    result = anomaly_detector.calculate_anomaly_scores()
-    return {"scores": result}
+@router.get("/anomalies/scores", response_model=Payload, dependencies=[_ANALYZE])
+async def get_anomaly_scores():
+    """Anomaly scores summary for stored graph/temporal anomalies"""
+    return Payload(data=anomaly_detector.calculate_anomaly_scores())
 
 
 # Entity Resolution
-@router.post("/entities/resolve")
-async def resolve_entities(request: EntityResolutionRequest) -> Dict[str, Any]:
+@router.post("/entities/resolve", response_model=EntityResolutionOut,
+             dependencies=[_ANALYZE])
+async def resolve_entities(request: EntityResolutionRequest):
     """Resolve entity matches"""
-    if request.method == "exact":
-        result = entity_resolver.resolve_exact(request.entities)
-    elif request.method == "fuzzy":
-        result = entity_resolver.resolve_fuzzy(request.entities, request.threshold)
-    elif request.method == "record_linkage":
-        result = entity_resolver.resolve_record_linkage(request.entities)
-    elif request.method == "graph":
-        result = entity_resolver.resolve_graph_based(request.entities)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown method: {request.method}")
-    return {"method": request.method, "matches": result}
+    try:
+        if request.method == "exact":
+            result = entity_resolver.resolve_exact(request.entities)
+        elif request.method == "fuzzy":
+            result = entity_resolver.resolve_fuzzy(request.entities,
+                                                   request.threshold)
+        elif request.method == "record_linkage":
+            result = entity_resolver.resolve_record_linkage(request.entities)
+        elif request.method == "graph":
+            result = entity_resolver.resolve_graph_based(request.entities)
+        else:
+            raise HTTPException(status_code=400, detail={
+                'message': f'Unknown method: {request.method}',
+                'allowed': ['exact', 'fuzzy', 'record_linkage', 'graph']})
+    except RuntimeError as exc:
+        # Missing fuzzy/record-linkage library -> honest 503.
+        from backend.api.errors import FeatureUnavailable
+        raise FeatureUnavailable(feature=f'ai.entities.{request.method}',
+                                 message=str(exc))
+    return result
 
 
-@router.post("/entities/deduplicate")
-async def deduplicate_entities() -> Dict[str, Any]:
-    """Deduplicate entities in the graph"""
-    result = entity_resolver.deduplicate_entities()
-    return {"deduplicated": result}
+@router.post("/entities/deduplicate", response_model=Payload,
+             dependencies=[_ANALYZE, requires('graph-db')])
+async def deduplicate_entities(apply: bool = False):
+    """Find duplicate entities (dry-run unless apply=true - merging deletes
+    nodes from the graph)."""
+    return Payload(data=entity_resolver.deduplicate_entities(apply=apply))
 
 
 # Predictive Analytics
-@router.post("/predict/link")
-async def predict_link(request: LinkPredictionRequest) -> Dict[str, Any]:
-    """Predict if a link exists between two nodes"""
-    if request.method == "common_neighbors":
-        score = predictive_analyzer.predict_link_common_neighbors(request.node1, request.node2)
-    elif request.method == "jaccard":
-        score = predictive_analyzer.predict_link_jaccard(request.node1, request.node2)
-    elif request.method == "adamic_adar":
-        score = predictive_analyzer.predict_link_adamic_adar(request.node1, request.node2)
-    elif request.method == "preferential_attachment":
-        score = predictive_analyzer.predict_link_preferential_attachment(request.node1, request.node2)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown method: {request.method}")
-    return {"node1": request.node1, "node2": request.node2, "method": request.method, "score": score}
+@router.post("/predict/link", response_model=LinkScoreOut,
+             dependencies=[_ANALYZE, requires('networkx', 'graph-db')])
+async def predict_link(request: LinkPredictionRequest):
+    """Per-pair link score"""
+    try:
+        score = predictive_analyzer.score_link(request.node1, request.node2,
+                                               request.method)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return LinkScoreOut(node_1=request.node1, node_2=request.node2,
+                        method=request.method, score=score)
 
 
-@router.post("/predict/node")
-async def predict_node_classification(request: NodeClassificationRequest) -> Dict[str, Any]:
-    """Predict node classification"""
-    result = predictive_analyzer.predict_node_classification(
-        request.node_id, request.features, request.method
-    )
-    return {"node_id": request.node_id, "classification": result}
+@router.post("/predict/node", response_model=Payload,
+             dependencies=[_ANALYZE, requires('networkx', 'sklearn', 'graph-db')])
+async def predict_node_classification(request: NodeClassificationRequest):
+    """Predict one node's label"""
+    prediction = predictive_analyzer.predict_node_classification(
+        request.node_id, request.features, request.method)
+    if prediction is None:
+        raise HTTPException(
+            status_code=404,
+            detail='Node not found or model could not be trained')
+    return Payload(data=prediction.to_dict()
+                   if hasattr(prediction, 'to_dict') else prediction)
 
 
-@router.get("/predict/graph-evolution")
-async def predict_graph_evolution() -> Dict[str, Any]:
+@router.get("/predict/graph-evolution", response_model=PredictionResultOut,
+            dependencies=[_ANALYZE, requires('networkx', 'graph-db')])
+async def predict_graph_evolution(steps: int = 5):
     """Predict graph evolution"""
-    result = predictive_analyzer.predict_graph_evolution()
-    return {"evolution": result}
+    return predictive_analyzer.predict_graph_evolution(steps=steps)
 
 
-@router.get("/predict/threats")
-async def predict_threats() -> Dict[str, Any]:
+@router.get("/predict/threats", response_model=PredictionResultOut,
+            dependencies=[_ANALYZE, requires('networkx', 'sklearn', 'graph-db')])
+async def predict_threats():
     """Predict potential threats"""
-    result = predictive_analyzer.predict_threats()
-    return {"threats": result}
+    return predictive_analyzer.predict_threats()

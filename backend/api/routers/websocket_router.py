@@ -17,6 +17,24 @@ router = APIRouter()
 security = HTTPBearer()
 
 
+from backend.security import authentication_service
+
+
+def _resolve_user_id(token: Optional[str]) -> Optional[str]:
+    """
+    Resolve a bearer token to a user id.
+
+    Uses the API gateway's own authentication service, the same one that issues
+    tokens at /api/security/token. The Flask app's auth module is a separate
+    stack and is not installed alongside the gateway.
+    """
+    if not token:
+        return None
+
+    validated = authentication_service.validate_token(token)
+    return validated.user_id if validated else None
+
+
 # Store active WebSocket connections
 class ConnectionManager:
     def __init__(self):
@@ -24,7 +42,9 @@ class ConnectionManager:
         self.user_connections: Dict[str, WebSocket] = {}
     
     async def connect(self, websocket: WebSocket, user_id: Optional[str] = None):
-        await websocket.accept()
+        # The socket is already accepted by the endpoint before this is called.
+        # Accepting a second time raises and drops the connection, which the
+        # browser sees as an immediate 1006 close.
         if user_id:
             self.user_connections[user_id] = websocket
         else:
@@ -108,10 +128,9 @@ async def websocket_endpoint(
         # Authenticate if token provided
         if token:
             try:
-                from backend.auth.authentication import decode_token
-                payload = decode_token(token)
-                if payload:
-                    user_id = str(payload.get('sub', 0))
+                resolved = _resolve_user_id(token)
+                if resolved:
+                    user_id = resolved
                     await manager.connect(websocket, user_id=user_id)
                     
                     # Send authentication confirmation
@@ -223,12 +242,10 @@ async def websocket_notifications(
             return
         
         try:
-            from backend.auth.authentication import decode_token
-            payload = decode_token(token)
-            if not payload:
+            user_id = _resolve_user_id(token)
+            if not user_id:
                 await websocket.close(code=1008, reason="Invalid token")
                 return
-            user_id = str(payload.get('sub', 0))
             await manager.connect(websocket, user_id=user_id)
             
             # Send notification history
@@ -282,12 +299,10 @@ async def websocket_graph(
             return
         
         try:
-            from backend.auth.authentication import decode_token
-            payload = decode_token(token)
-            if not payload:
+            user_id = _resolve_user_id(token)
+            if not user_id:
                 await websocket.close(code=1008, reason="Invalid token")
                 return
-            user_id = str(payload.get('sub', 0))
             await manager.connect(websocket, user_id=user_id)
             
             # Send initial graph state
@@ -334,7 +349,11 @@ async def websocket_graph(
 
 
 # HTTP endpoint to broadcast messages to WebSocket clients
-@router.post("/broadcast")
+from backend.api.deps import require_permission as _require_permission
+
+
+@router.post("/broadcast",
+             dependencies=[_require_permission('security', 'manage')])
 async def broadcast_message(
     message: WebSocketMessage,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -346,9 +365,7 @@ async def broadcast_message(
     """
     # Verify admin token
     try:
-        from backend.auth.authentication import decode_token
-        payload = decode_token(credentials.credentials)
-        if not payload:
+        if not _resolve_user_id(credentials.credentials):
             raise HTTPException(status_code=401, detail="Invalid token")
         
         # Check if user is admin (simplified)
