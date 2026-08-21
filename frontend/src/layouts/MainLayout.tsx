@@ -41,12 +41,13 @@ import { motion } from 'framer-motion';
 const { Header, Sider, Content } = Layout;
 
 interface MainLayoutProps {
+  onRouteChange?: (path: string) => void;
   children: React.ReactNode;
   toggleTheme: () => void;
   isDarkMode: boolean;
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMode }) => {
+const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMode, onRouteChange }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeKey, setActiveKey] = useState('dashboard');

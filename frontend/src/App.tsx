@@ -1,9 +1,11 @@
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, Spin, theme } from 'antd';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'react-hot-toast';
+import { Spin, FloatButton, Badge, theme } from 'antd';
+import { RobotOutlined, BellOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import Cookies from 'js-cookie';
+
+// Providers
+import AppProvider from './providers/AppProvider';
 
 // Layout
 import MainLayout from './layouts/MainLayout';
@@ -23,163 +25,179 @@ const NotFound = React.lazy(() => import('./pages/NotFound'));
 
 // Components
 import LoadingSpinner from './components/common/LoadingSpinner';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 2,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    },
-  },
-});
+import AIChatAssistant from './components/AIChatAssistant';
+import NotificationCenter from './components/NotificationCenter';
 
 const App: React.FC = () => {
-  const [isDarkMode, setIsDarkMode] = React.useState(false);
-
-  useEffect(() => {
-    // Check for dark mode preference
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    setIsDarkMode(savedTheme === 'dark' || (savedTheme === null && prefersDark));
-  }, []);
-
-  const toggleTheme = () => {
-    const newTheme = !isDarkMode;
-    setIsDarkMode(newTheme);
-    localStorage.setItem('theme', newTheme ? 'dark' : 'light');
-  };
+  const [aiAssistantVisible, setAiAssistantVisible] = useState(false);
+  const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [unreadNotifications, setUnreadNotifications] = useState(5);
 
   const isAuthenticated = !!Cookies.get('access_token');
 
+  // Update current page based on route
+  const handleRouteChange = (path: string) => {
+    const pageMap: Record<string, string> = {
+      '/': 'dashboard',
+      '/graph': 'graph',
+      '/ai': 'ai',
+      '/scraping': 'scraping',
+      '/security': 'security',
+      '/threat': 'threat',
+      '/settings': 'settings',
+    };
+    setCurrentPage(pageMap[path] || 'dashboard');
+  };
+
   return (
-    <ConfigProvider
-      theme={
-        algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
-        token: {
-          colorPrimary: '#1890ff',
-          borderRadius: 8,
-        },
-      }
-    >
-      <QueryClientProvider client={queryClient}>
-        <Router>
-          <Suspense fallback={<LoadingSpinner fullScreen />}>
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-                style: {
-                  background: isDarkMode ? '#1a1a1a' : '#fff',
-                  color: isDarkMode ? '#fff' : '#000',
-                },
-              }}
+    <AppProvider>
+      <Router>
+        <Suspense fallback={<LoadingSpinner fullScreen />}>
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/login" element={<AuthLayout><Login /></AuthLayout>} />
+            <Route path="/register" element={<AuthLayout><Register /></AuthLayout>} />
+            
+            {/* Protected Routes */}
+            <Route
+              path="/"
+              element={
+                isAuthenticated ? (
+                  <MainLayout onRouteChange={handleRouteChange}>
+                    <Dashboard />
+                  </MainLayout>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
             />
             
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<AuthLayout><Login /></AuthLayout>} />
-              <Route path="/register" element={<AuthLayout><Register /></AuthLayout>} />
-              
-              {/* Protected Routes */}
-              <Route
-                path="/"
-                element={
-                  isAuthenticated ? (
-                    <MainLayout toggleTheme={toggleTheme} isDarkMode={isDarkMode}>
-                      <Dashboard />
-                    </MainLayout>
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                }
+            <Route
+              path="/graph"
+              element={
+                isAuthenticated ? (
+                  <MainLayout onRouteChange={handleRouteChange}>
+                    <GraphExplorer />
+                  </MainLayout>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            <Route
+              path="/ai"
+              element={
+                isAuthenticated ? (
+                  <MainLayout onRouteChange={handleRouteChange}>
+                    <AIAnalytics />
+                  </MainLayout>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            <Route
+              path="/scraping"
+              element={
+                isAuthenticated ? (
+                  <MainLayout onRouteChange={handleRouteChange}>
+                    <ScrapingHub />
+                  </MainLayout>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            <Route
+              path="/security"
+              element={
+                isAuthenticated ? (
+                  <MainLayout onRouteChange={handleRouteChange}>
+                    <SecurityCenter />
+                  </MainLayout>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            <Route
+              path="/threat"
+              element={
+                isAuthenticated ? (
+                  <MainLayout onRouteChange={handleRouteChange}>
+                    <ThreatIntelligence />
+                  </MainLayout>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            <Route
+              path="/settings"
+              element={
+                isAuthenticated ? (
+                  <MainLayout onRouteChange={handleRouteChange}>
+                    <Settings />
+                  </MainLayout>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            {/* 404 */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+
+          {/* AI Chat Assistant - Available on all pages */}
+          {isAuthenticated && (
+            <>
+              <AIChatAssistant
+                visible={aiAssistantVisible}
+                onClose={() => setAiAssistantVisible(false)}
+                context={currentPage}
               />
               
-              <Route
-                path="/graph"
-                element={
-                  isAuthenticated ? (
-                    <MainLayout toggleTheme={toggleTheme} isDarkMode={isDarkMode}>
-                      <GraphExplorer />
-                    </MainLayout>
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                }
+              <NotificationCenter
+                visible={notificationCenterVisible}
+                onClose={() => setNotificationCenterVisible(false)}
               />
-              
-              <Route
-                path="/ai"
-                element={
-                  isAuthenticated ? (
-                    <MainLayout toggleTheme={toggleTheme} isDarkMode={isDarkMode}>
-                      <AIAnalytics />
-                    </MainLayout>
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                }
+
+              {/* Float Buttons */}
+              <FloatButton.Group
+                trigger="hover"
+                type="primary"
+                icon={<RobotOutlined />}
+                style={{ right: 24, bottom: 100 }}
+                onClick={() => setAiAssistantVisible(true)}
+                tooltip="AI Assistant"
               />
-              
-              <Route
-                path="/scraping"
-                element={
-                  isAuthenticated ? (
-                    <MainLayout toggleTheme={toggleTheme} isDarkMode={isDarkMode}>
-                      <ScrapingHub />
-                    </MainLayout>
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                }
+
+              <FloatButton
+                icon={<Badge count={unreadNotifications}><BellOutlined /></Badge>}
+                type="default"
+                style={{ right: 24, bottom: 180 }}
+                onClick={() => setNotificationCenterVisible(true)}
+                tooltip="Notifications"
               />
-              
-              <Route
-                path="/security"
-                element={
-                  isAuthenticated ? (
-                    <MainLayout toggleTheme={toggleTheme} isDarkMode={isDarkMode}>
-                      <SecurityCenter />
-                    </MainLayout>
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                }
+
+              <FloatButton
+                icon={<QuestionCircleOutlined />}
+                type="default"
+                style={{ right: 24, bottom: 260 }}
+                tooltip="Help"
               />
-              
-              <Route
-                path="/threat"
-                element={
-                  isAuthenticated ? (
-                    <MainLayout toggleTheme={toggleTheme} isDarkMode={isDarkMode}>
-                      <ThreatIntelligence />
-                    </MainLayout>
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                }
-              />
-              
-              <Route
-                path="/settings"
-                element={
-                  isAuthenticated ? (
-                    <MainLayout toggleTheme={toggleTheme} isDarkMode={isDarkMode}>
-                      <Settings />
-                    </MainLayout>
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                }
-              />
-              
-              {/* 404 */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </Router>
-      </QueryClientProvider>
-    </ConfigProvider>
+            </>
+          )}
+        </Suspense>
+      </Router>
+    </AppProvider>
   );
 };
 
