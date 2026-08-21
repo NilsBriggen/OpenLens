@@ -1,268 +1,510 @@
-import React, { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
+import React, { useState, useRef, useEffect } from 'react';
+import { Card, Button, Space, Select, Tooltip, Typography, Row, Col, Divider, Spin, Alert } from 'antd';
+import {
+  ProjectOutlined,
+  EyeOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
+  SyncOutlined,
+  SettingOutlined,
+  NodeIndexOutlined,
+  BranchesOutlined,
+  ClusterOutlined,
+  PicCenterOutlined,
+  PicLeftOutlined,
+  PicRightOutlined
+} from '@ant-design/icons';
+import CytoscapeComponent from 'react-cytoscapejs';
+import { motion } from 'framer-motion';
 
-interface Node {
+const { Text, Title } = Typography;
+const { Option } = Select;
+
+interface NodeData {
   id: string;
-  name: string;
-  type: 'user' | 'post' | 'hashtag' | 'location';
-  group?: number;
+  label: string;
+  type?: string;
+  properties?: Record<string, any>;
+  [key: string]: any;
 }
 
-interface Link {
+interface EdgeData {
+  id: string;
   source: string;
   target: string;
-  type: 'POSTED_BY' | 'MENTIONS' | 'TAGGED_WITH' | 'LOCATED_AT';
-  value?: number;
+  label?: string;
+  type?: string;
+  properties?: Record<string, any>;
+  [key: string]: any;
 }
 
 interface GraphData {
-  nodes: Node[];
-  links: Link[];
+  nodes: NodeData[];
+  edges: EdgeData[];
 }
 
-const GraphVisualization: React.FC = () => {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [data, setData] = useState<GraphData>({
-    nodes: [],
-    links: [],
-  });
-  const [width, setWidth] = useState<number>(800);
-  const [height, setHeight] = useState<number>(600);
+interface GraphVisualizationProps {
+  data: GraphData;
+  height?: number | string;
+  layout?: string;
+  onNodeClick?: (node: NodeData) => void;
+  onEdgeClick?: (edge: EdgeData) => void;
+  onReady?: (cy: any) => void;
+  style?: React.CSSProperties;
+}
 
-  // Sample data for demonstration
-  const sampleData: GraphData = {
-    nodes: [
-      { id: 'user1', name: 'Alice', type: 'user', group: 1 },
-      { id: 'user2', name: 'Bob', type: 'user', group: 1 },
-      { id: 'user3', name: 'Charlie', type: 'user', group: 2 },
-      { id: 'post1', name: 'Post 1', type: 'post', group: 3 },
-      { id: 'post2', name: 'Post 2', type: 'post', group: 3 },
-      { id: 'hashtag1', name: '#OSINT', type: 'hashtag', group: 4 },
-      { id: 'loc1', name: 'San Francisco', type: 'location', group: 5 },
-    ],
-    links: [
-      { source: 'user1', target: 'post1', type: 'POSTED_BY' },
-      { source: 'user1', target: 'post2', type: 'POSTED_BY' },
-      { source: 'user2', target: 'post1', type: 'MENTIONS' },
-      { source: 'post1', target: 'hashtag1', type: 'TAGGED_WITH' },
-      { source: 'post1', target: 'loc1', type: 'LOCATED_AT' },
-      { source: 'user1', target: 'user2', type: 'FRIENDS_WITH' },
-      { source: 'user3', target: 'post2', type: 'MENTIONS' },
-    ],
+const GraphVisualization: React.FC<GraphVisualizationProps> = ({
+  data,
+  height = 600,
+  layout = 'cose',
+  onNodeClick,
+  onEdgeClick,
+  onReady,
+  style = {},
+}) => {
+  const [cy, setCy] = useState<any>(null);
+  const [zoom, setZoom] = useState(1);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<EdgeData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const cyRef = useRef<any>(null);
+
+  // Layout options
+  const layoutOptions = [
+    { label: 'CoSE', value: 'cose' },
+    { label: 'Circle', value: 'circle' },
+    { label: 'Grid', value: 'grid' },
+    { label: 'Random', value: 'random' },
+    { label: 'Dagre', value: 'dagre' },
+    { label: 'Breadthfirst', value: 'breadthfirst' },
+    { label: 'Cose-Bilkent', value: 'cose-bilkent' },
+    { label: 'Fcose', value: 'fcose' },
+    { label: 'KK', value: 'kk' },
+    { label: 'ForceAtlas2', value: 'forceAtlas2' },
+  ];
+
+  // Handle node click
+  const handleNodeClick = (event: any) => {
+    const node = event.target;
+    const nodeData = node.data();
+    setSelectedNode(nodeData);
+    setSelectedEdge(null);
+    onNodeClick && onNodeClick(nodeData);
   };
 
-  // Load sample data
-  useEffect(() => {
-    setData(sampleData);
-  }, []);
+  // Handle edge click
+  const handleEdgeClick = (event: any) => {
+    const edge = event.target;
+    const edgeData = edge.data();
+    setSelectedEdge(edgeData);
+    setSelectedNode(null);
+    onEdgeClick && onEdgeClick(edgeData);
+  };
 
-  // Handle window resize
-  useEffect(() => {
-    const handleResize = () => {
-      const container = svgRef.current?.parentElement;
-      if (container) {
-        setWidth(container.clientWidth);
-        setHeight(container.clientHeight || 600);
-      }
+  // Handle background click
+  const handleBackgroundClick = () => {
+    setSelectedNode(null);
+    setSelectedEdge(null);
+  };
+
+  // Zoom controls
+  const zoomIn = () => {
+    if (cyRef.current) {
+      cyRef.current.zoom({ level: zoom + 0.2, renderedPosition: { x: window.innerWidth / 2, y: window.innerHeight / 2 } });
+      setZoom(zoom + 0.2);
+    }
+  };
+
+  const zoomOut = () => {
+    if (cyRef.current) {
+      cyRef.current.zoom({ level: Math.max(0.2, zoom - 0.2), renderedPosition: { x: window.innerWidth / 2, y: window.innerHeight / 2 } });
+      setZoom(Math.max(0.2, zoom - 0.2));
+    }
+  };
+
+  const resetZoom = () => {
+    if (cyRef.current) {
+      cyRef.current.fit();
+      setZoom(1);
+    }
+  };
+
+  // Layout change
+  const handleLayoutChange = (newLayout: string) => {
+    if (cyRef.current) {
+      cyRef.current.layout({ name: newLayout, animate: true }).run();
+    }
+  };
+
+  // Get node color based on type
+  const getNodeColor = (type: string | undefined) => {
+    const colors: Record<string, string> = {
+      person: '#1890ff',
+      company: '#52c41a',
+      email: '#faad14',
+      ip: '#f5222d',
+      domain: '#722ed1',
+      url: '#fa8c16',
+      default: '#666',
     };
+    return colors[type || 'default'];
+  };
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Draw the graph
-  useEffect(() => {
-    if (!svgRef.current || !data.nodes.length) return;
-
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove(); // Clear previous graph
-
-    // Create a group for the graph
-    const g = svg.append('g').attr('transform', `translate(${width / 2}, ${height / 2})`);
-
-    // Create a force simulation
-    const simulation = d3
-      .forceSimulation<Node, Link>(data.nodes as Node[])
-      .force(
-        'link',
-        d3
-          .forceLink<Node, Link>(data.links as Link[])
-          .id((d) => d.id)
-          .distance(150)
-      )
-      .force('charge', d3.forceManyBody<Node>().strength(-300))
-      .force('center', d3.forceCenter().x(0).y(0))
-      .force('collision', d3.forceCollide<Node>().radius(30));
-
-    // Create links
-    const link = g
-      .append('g')
-      .selectAll('line')
-      .data(data.links)
-      .enter()
-      .append('line')
-      .attr('stroke', '#999')
-      .attr('stroke-opacity', 0.6)
-      .attr('stroke-width', (d) => {
-        switch (d.type) {
-          case 'POSTED_BY':
-            return 2;
-          case 'MENTIONS':
-            return 1.5;
-          case 'TAGGED_WITH':
-            return 1;
-          case 'LOCATED_AT':
-            return 1.5;
-          default:
-            return 1;
-        }
-      });
-
-    // Create nodes
-    const node = g
-      .append('g')
-      .selectAll('g')
-      .data(data.nodes)
-      .enter()
-      .append('g')
-      .call(
-        d3
-          .drag<Node, any>()
-          .on('start', dragstarted)
-          .on('drag', dragged)
-          .on('end', dragended)
-      );
-
-    // Add circles for nodes
-    node
-      .append('circle')
-      .attr('r', 15)
-      .attr('fill', (d) => {
-        switch (d.type) {
-          case 'user':
-            return '#4CAF50';
-          case 'post':
-            return '#2196F3';
-          case 'hashtag':
-            return '#FF9800';
-          case 'location':
-            return '#F44336';
-          default:
-            return '#9E9E9E';
-        }
-      })
-      .attr('stroke', '#fff')
-      .attr('stroke-width', 2);
-
-    // Add labels
-    node
-      .append('text')
-      .text((d) => d.name)
-      .attr('x', 20)
-      .attr('y', 5)
-      .attr('font-size', '12px')
-      .attr('fill', '#333');
-
-    // Update positions on each tick
-    simulation.on('tick', () => {
-      link
-        .attr('x1', (d) => (d.source as any).x)
-        .attr('y1', (d) => (d.source as any).y)
-        .attr('x2', (d) => (d.target as any).x)
-        .attr('y2', (d) => (d.target as any).y);
-
-      node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
-    });
-
-    // Drag functions
-    function dragstarted(event: any, d: Node) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = event.x;
-      d.fy = event.y;
-    }
-
-    function dragged(event: any, d: Node) {
-      d.fx = event.x;
-      d.fy = event.y;
-    }
-
-    function dragended(event: any, d: Node) {
-      if (!event.active) simulation.alphaTarget(0);
-      d.fx = null;
-      d.fy = null;
-    }
-
-    // Clean up on unmount
-    return () => {
-      simulation.stop();
+  // Get edge color based on type
+  const getEdgeColor = (type: string | undefined) => {
+    const colors: Record<string, string> = {
+      WORKS_AT: '#52c41a',
+      HAS_EMAIL: '#faad14',
+      KNOWS: '#1890ff',
+      USES_IP: '#f5222d',
+      OWNS_DOMAIN: '#722ed1',
+      CONNECTED_TO: '#fa8c16',
+      default: '#ccc',
     };
-  }, [data, width, height]);
+    return colors[type || 'default'];
+  };
 
-  // Add zoom functionality
-  useEffect(() => {
-    if (!svgRef.current) return;
+  // Get node shape based on type
+  const getNodeShape = (type: string | undefined) => {
+    const shapes: Record<string, string> = {
+      person: 'ellipse',
+      company: 'rectangle',
+      email: 'ellipse',
+      ip: 'ellipse',
+      domain: 'ellipse',
+      url: 'ellipse',
+      default: 'ellipse',
+    };
+    return shapes[type || 'default'];
+  };
 
-    const svg = d3.select(svgRef.current);
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
-      .on('zoom', (event) => {
-        svg.select('g').attr('transform', event.transform);
-      });
+  // Cytoscape configuration
+  const cyConfig = {
+    style: [
+      // Node styles
+      {
+        selector: 'node',
+        style: {
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'background-color': 'data(color)',
+          'color': '#fff',
+          'font-size': '12px',
+          'width': 'mapData(type, person, 30, company, 40, email, 25, ip, 25, domain, 25, 30)',
+          'height': 'mapData(type, person, 30, company, 40, email, 25, ip, 25, domain, 25, 30)',
+          'shape': 'data(shape)',
+          'border-width': 'mapData(selected, true, 3, false, 1)',
+          'border-color': 'mapData(selected, true, #1890ff, false, #666)',
+        },
+      },
+      // Edge styles
+      {
+        selector: 'edge',
+        style: {
+          'width': 'mapData(selected, true, 3, false, 2)',
+          'line-color': 'data(color)',
+          'curve-style': 'bezier',
+          'label': 'data(label)',
+          'font-size': '10px',
+          'text-background-color': '#fff',
+          'text-background-opacity': 0.7,
+          'text-background-padding': '2px',
+        },
+      },
+      // Selected styles
+      {
+        selector: 'node:selected',
+        style: {
+          'border-width': 3,
+          'border-color': '#1890ff',
+        },
+      },
+      {
+        selector: 'edge:selected',
+        style: {
+          'line-width': 3,
+          'line-color': '#1890ff',
+        },
+      },
+    ],
+    layout: {
+      name: layout,
+      animate: true,
+      animationDuration: 1000,
+      randomize: false,
+    },
+  };
 
-    svg.call(zoom);
-  }, []);
+  // Prepare data with colors and shapes
+  const preparedData = {
+    nodes: data.nodes.map(node => ({
+      ...node,
+      color: getNodeColor(node.type),
+      shape: getNodeShape(node.type),
+      selected: selectedNode?.id === node.id,
+    })),
+    edges: data.edges.map(edge => ({
+      ...edge,
+      color: getEdgeColor(edge.type),
+      selected: selectedEdge?.id === edge.id,
+    })),
+  };
+
+  // Stats
+  const nodeCount = data.nodes.length;
+  const edgeCount = data.edges.length;
+  const nodeTypes = [...new Set(data.nodes.map(n => n.type))].filter(Boolean);
+  const edgeTypes = [...new Set(data.edges.map(e => e.type))].filter(Boolean);
 
   return (
-    <div className="graph-visualization">
-      <h2>📊 Graph Visualization</h2>
-      <p>
-        Visualize connections between users, posts, hashtags, and locations.
-        Drag nodes to rearrange the graph, and zoom in/out to explore.
-      </p>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      style={style}
+    >
+      {/* Stats Bar */}
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Row gutter={24}>
+          <Col span={6}>
+            <Space>
+              <NodeIndexOutlined style={{ color: '#1890ff' }} />
+              <Text strong>{nodeCount}</Text>
+              <Text type="secondary">Nodes</Text>
+            </Space>
+          </Col>
+          <Col span={6}>
+            <Space>
+              <BranchesOutlined style={{ color: '#52c41a' }} />
+              <Text strong>{edgeCount}</Text>
+              <Text type="secondary">Edges</Text>
+            </Space>
+          </Col>
+          <Col span={12}>
+            <Space wrap>
+              {nodeTypes.map(type => (
+                <Tooltip key={type} title={`Node type: ${type}`}>
+                  <Tag color={getNodeColor(type)} style={{ margin: 0 }}>
+                    {type} ({data.nodes.filter(n => n.type === type).length})
+                  </Tag>
+                </Tooltip>
+              ))}
+            </Space>
+          </Col>
+        </Row>
+      </Card>
 
-      <div className="graph-controls">
-        <button onClick={() => setData(sampleData)}>Load Sample Data</button>
-        <button onClick={() => setData({ nodes: [], links: [] })}>Clear Graph</button>
-      </div>
+      {/* Graph Container */}
+      <Card
+        title={
+          <Space>
+            <ProjectOutlined />
+            Graph Visualization
+          </Space>
+        }
+        extra={
+          <Space>
+            <Select
+              value={layout}
+              onChange={handleLayoutChange}
+              options={layoutOptions}
+              size="small"
+              style={{ width: 120 }}
+            />
+            <Tooltip title="Zoom In">
+              <Button icon={<ZoomInOutlined />} onClick={zoomIn} size="small" />
+            </Tooltip>
+            <Tooltip title="Zoom Out">
+              <Button icon={<ZoomOutOutlined />} onClick={zoomOut} size="small" />
+            </Tooltip>
+            <Tooltip title="Reset Zoom">
+              <Button icon={<SyncOutlined />} onClick={resetZoom} size="small" />
+            </Tooltip>
+            <Tooltip title={fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}>
+              <Button
+                icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                onClick={() => setFullscreen(!fullscreen)}
+                size="small"
+              />
+            </Tooltip>
+            <Tooltip title="Settings">
+              <Button icon={<SettingOutlined />} size="small" />
+            </Tooltip>
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <Spin size="large" />
+            <Text type="secondary" style={{ marginLeft: 16 }}>Loading graph...</Text>
+          </div>
+        ) : (
+          <div
+            style={{
+              height: fullscreen ? 'calc(100vh - 200px)' : height,
+              width: '100%',
+              border: '1px solid #f0f0f0',
+              borderRadius: 8,
+              overflow: 'hidden',
+              background: 'var(--bg-color-secondary)',
+            }}
+          >
+            <CytoscapeComponent
+              elements={CytoscapeComponent.normalizeElements(preparedData)}
+              style={{ width: '100%', height: '100%' }}
+              cy={(cy) => {
+                cyRef.current = cy;
+                setCy(cy);
+                onReady && onReady(cy);
+                cy.on('tap', 'node', handleNodeClick);
+                cy.on('tap', 'edge', handleEdgeClick);
+                cy.on('tap', handleBackgroundClick);
+              }}
+              stylesheet={cyConfig.style}
+              layout={cyConfig.layout}
+            />
+          </div>
+        )}
+      </Card>
 
-      <div className="legend">
-        <h4>Legend:</h4>
-        <div className="legend-item">
-          <span className="legend-color" style={{ backgroundColor: '#4CAF50' }}></span>
-          <span>User</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-color" style={{ backgroundColor: '#2196F3' }}></span>
-          <span>Post</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-color" style={{ backgroundColor: '#FF9800' }}></span>
-          <span>Hashtag</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-color" style={{ backgroundColor: '#F44336' }}></span>
-          <span>Location</span>
-        </div>
-      </div>
+      {/* Selection Details */}
+      {(selectedNode || selectedEdge) && (
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Card
+            title={
+              <Space>
+                {selectedNode ? <NodeIndexOutlined /> : <BranchesOutlined />}
+                {selectedNode ? 'Node Details' : 'Edge Details'}
+              </Space>
+            }
+            size="small"
+          >
+            {selectedNode && (
+              <Row gutter={24}>
+                <Col span={24}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text strong>ID:</Text>
+                      <Text code>{selectedNode.id}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text strong>Label:</Text>
+                      <Text>{selectedNode.label}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text strong>Type:</Text>
+                      <Tag color={getNodeColor(selectedNode.type)}>{selectedNode.type || 'unknown'}</Tag>
+                    </div>
+                    {selectedNode.properties && (
+                      <div>
+                        <Text strong>Properties:</Text>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12 }}>
+                          {JSON.stringify(selectedNode.properties, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </Space>
+                </Col>
+              </Row>
+            )}
+            
+            {selectedEdge && (
+              <Row gutter={24}>
+                <Col span={24}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text strong>ID:</Text>
+                      <Text code>{selectedEdge.id}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text strong>Source:</Text>
+                      <Text>{selectedEdge.source}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text strong>Target:</Text>
+                      <Text>{selectedEdge.target}</Text>
+                    </div>
+                    {selectedEdge.label && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text strong>Label:</Text>
+                        <Text>{selectedEdge.label}</Text>
+                      </div>
+                    )}
+                    {selectedEdge.type && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text strong>Type:</Text>
+                        <Tag color={getEdgeColor(selectedEdge.type)}>{selectedEdge.type}</Tag>
+                      </div>
+                    )}
+                    {selectedEdge.properties && (
+                      <div>
+                        <Text strong>Properties:</Text>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12 }}>
+                          {JSON.stringify(selectedEdge.properties, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </Space>
+                </Col>
+              </Row>
+            )}
+          </Card>
+        </motion.div>
+      )}
 
-      <div className="graph-container" style={{ width: '100%', height: '600px' }}>
-        <svg
-          ref={svgRef}
-          width="100%"
-          height="100%"
-          viewBox={`0 0 ${width} ${height}`}
-          preserveAspectRatio="xMidYMid meet"
-        />
-      </div>
-
-      <div className="graph-info">
-        <p>
-          <strong>Nodes:</strong> {data.nodes.length} | <strong>Links:</strong> {data.links.length}
-        </p>
-      </div>
-    </div>
+      {/* Legend */}
+      <Card size="small" style={{ marginTop: 16 }}>
+        <Title level={5} style={{ margin: 0, marginBottom: 12 }}>
+          Legend
+        </Title>
+        <Row gutter={24}>
+          <Col span={12}>
+            <Text strong style={{ marginBottom: 8, display: 'block' }}>Node Types:</Text>
+            <Space wrap>
+              {nodeTypes.map(type => (
+                <Space key={type}>
+                  <div
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: getNodeShape(type) === 'rectangle' ? 4 : '50%',
+                      background: getNodeColor(type),
+                    }}
+                  />
+                  <Text style={{ fontSize: 12 }}>{type}</Text>
+                </Space>
+              ))}
+            </Space>
+          </Col>
+          <Col span={12}>
+            <Text strong style={{ marginBottom: 8, display: 'block' }}>Edge Types:</Text>
+            <Space wrap>
+              {edgeTypes.map(type => (
+                <Space key={type}>
+                  <div
+                    style={{
+                      width: 30,
+                      height: 2,
+                      background: getEdgeColor(type),
+                    }}
+                  />
+                  <Text style={{ fontSize: 12 }}>{type}</Text>
+                </Space>
+              ))}
+            </Space>
+          </Col>
+        </Row>
+      </Card>
+    </motion.div>
   );
 };
 
