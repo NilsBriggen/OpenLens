@@ -33,6 +33,14 @@ except ImportError:
     PANDAS_AVAILABLE = False
     print("Pandas not available. Install with: pip install pandas")
 
+# Try to import networkx
+try:
+    import networkx as nx
+    NETWORKX_AVAILABLE = True
+except ImportError:
+    NETWORKX_AVAILABLE = False
+    print("NetworkX not available. Install with: pip install networkx")
+
 # Try to import scikit-learn
 try:
     from sklearn.ensemble import IsolationForest, RandomForestRegressor
@@ -197,74 +205,150 @@ class AnomalyDetector:
             execution_time=execution_time,
         )
     
-    def _detect_statistical_anomalies(self, data: List[Dict[str, Any]]) -> List[Anomaly]:
-        """Detect anomalies using statistical methods."""
+    def _result(self, method: str, anomalies: List[Anomaly], total: int,
+                started: float) -> AnomalyDetectionResult:
+        """Package a single-method run into an AnomalyDetectionResult."""
+        return AnomalyDetectionResult(
+            method=method,
+            anomalies=anomalies,
+            total_entities=total,
+            anomalous_entities=len(anomalies),
+            execution_time=time.time() - started,
+        )
+
+    def detect_statistical_anomalies(self, data: List[Dict[str, Any]],
+                                     threshold: float = 3.0,
+                                     iqr_k: float = 1.5) -> AnomalyDetectionResult:
+        """Public: combined z-score + IQR detection."""
+        started = time.time()
+        anomalies = (self._zscore_anomalies(data, threshold)
+                     + self._iqr_anomalies(data, iqr_k))
+        return self._result('statistical', anomalies, len(data), started)
+
+    def detect_zscore_anomalies(self, data: List[Dict[str, Any]],
+                                threshold: float = 3.0) -> AnomalyDetectionResult:
+        """Public: z-score detection only."""
+        started = time.time()
+        return self._result('z_score', self._zscore_anomalies(data, threshold),
+                            len(data), started)
+
+    def detect_iqr_anomalies(self, data: List[Dict[str, Any]],
+                             k: float = 1.5) -> AnomalyDetectionResult:
+        """Public: IQR detection only."""
+        started = time.time()
+        return self._result('iqr', self._iqr_anomalies(data, k), len(data), started)
+
+    def detect_isolation_forest(self, data: List[Dict[str, Any]]) -> AnomalyDetectionResult:
+        """Public: Isolation Forest detection."""
+        started = time.time()
+        return self._result('isolation_forest',
+                            self._detect_isolation_forest_anomalies(data),
+                            len(data), started)
+
+    def detect_local_outlier_factor(self, data: List[Dict[str, Any]]) -> AnomalyDetectionResult:
+        """Public: Local Outlier Factor detection."""
+        started = time.time()
+        return self._result('local_outlier',
+                            self._detect_local_outlier_anomalies(data),
+                            len(data), started)
+
+    def detect_dbscan_anomalies(self, data: List[Dict[str, Any]]) -> AnomalyDetectionResult:
+        """Public: DBSCAN detection."""
+        started = time.time()
+        return self._result('dbscan', self._detect_dbscan_anomalies(data),
+                            len(data), started)
+
+    def calculate_anomaly_scores(self, data: List[Dict[str, Any]] = None,
+                                 method: str = None) -> Dict[str, float]:
+        """
+        Per-entity anomaly scores. With data, scores that data; without,
+        summarises stored graph/temporal anomalies via get_anomaly_summary.
+        """
+        if data:
+            result = self.detect_anomalies(data, method=method)
+            scores: Dict[str, float] = {}
+            for anomaly in result.anomalies:
+                scores[anomaly.entity_id] = max(scores.get(anomaly.entity_id, 0.0),
+                                                float(anomaly.score))
+            return scores
+        summary = self.get_anomaly_summary()
+        return {k: float(v) for k, v in summary.items()
+                if isinstance(v, (int, float))}
+
+    def _numeric_feature_values(self, data: List[Dict[str, Any]]):
+        """Yield (feature, values) pairs for numeric features above min size."""
         if not data or len(data) < self.config.min_entities:
-            return []
-        
-        anomalies = []
-        
+            return
+        features = self.config.features or list(data[0].keys())
+        for feature in features:
+            if feature in ('id', 'entity_id', 'entity_type', 'timestamp'):
+                continue
+            values = [d.get(feature, 0) for d in data
+                      if isinstance(d.get(feature), (int, float))]
+            if len(values) >= self.config.min_entities:
+                yield feature, values
+
+    def _zscore_anomalies(self, data: List[Dict[str, Any]],
+                          threshold: float = 3.0) -> List[Anomaly]:
+        """Z-score anomalies only (split out of the fused statistical pass)."""
+        anomalies: List[Anomaly] = []
         try:
-            # Extract features
-            features = self.config.features or list(data[0].keys())
-            
-            for feature in features:
-                if feature not in ['id', 'entity_id', 'entity_type', 'timestamp']:
-                    values = [d.get(feature, 0) for d in data if isinstance(d.get(feature), (int, float))]
-                    
-                    if len(values) < self.config.min_entities:
-                        continue
-                    
-                    # Calculate statistics
-                    mean = sum(values) / len(values)
-                    std = (sum((x - mean) ** 2 for x in values) / len(values)) ** 0.5
-                    
-                    # Z-score method
-                    for i, d in enumerate(data):
-                        if feature in d and isinstance(d[feature], (int, float)):
-                            z_score = (d[feature] - mean) / std if std > 0 else 0
-                            
-                            if abs(z_score) > 3:  # 3 standard deviations
-                                anomalies.append(Anomaly(
-                                    anomaly_id=f"stat_{feature}_{i}",
-                                    entity_id=d.get('id', str(i)),
-                                    entity_type=d.get('entity_type', 'node'),
-                                    score=abs(z_score),
-                                    features={feature: d[feature]},
-                                    timestamp=d.get('timestamp'),
-                                    method='z_score',
-                                    explanation=f"Value {d[feature]} is {abs(z_score):.2f} standard deviations from mean",
-                                    severity='high' if abs(z_score) > 4 else 'medium',
-                                ))
-                    
-                    # IQR method
-                    sorted_values = sorted(values)
-                    q1 = sorted_values[len(sorted_values) // 4]
-                    q3 = sorted_values[3 * len(sorted_values) // 4]
-                    iqr = q3 - q1
-                    lower_bound = q1 - 1.5 * iqr
-                    upper_bound = q3 + 1.5 * iqr
-                    
-                    for i, d in enumerate(data):
-                        if feature in d and isinstance(d[feature], (int, float)):
-                            if d[feature] < lower_bound or d[feature] > upper_bound:
-                                anomalies.append(Anomaly(
-                                    anomaly_id=f"iqr_{feature}_{i}",
-                                    entity_id=d.get('id', str(i)),
-                                    entity_type=d.get('entity_type', 'node'),
-                                    score=1.0,
-                                    features={feature: d[feature]},
-                                    timestamp=d.get('timestamp'),
-                                    method='iqr',
-                                    explanation=f"Value {d[feature]} is outside IQR range [{lower_bound:.2f}, {upper_bound:.2f}]",
-                                    severity='high',
-                                ))
-        
+            for feature, values in self._numeric_feature_values(data):
+                mean = sum(values) / len(values)
+                std = (sum((x - mean) ** 2 for x in values) / len(values)) ** 0.5
+                for i, d in enumerate(data):
+                    if feature in d and isinstance(d[feature], (int, float)):
+                        z_score = (d[feature] - mean) / std if std > 0 else 0
+                        if abs(z_score) > threshold:
+                            anomalies.append(Anomaly(
+                                anomaly_id=f"stat_{feature}_{i}",
+                                entity_id=d.get('id', str(i)),
+                                entity_type=d.get('entity_type', 'node'),
+                                score=abs(z_score),
+                                features={feature: d[feature]},
+                                timestamp=d.get('timestamp'),
+                                method='z_score',
+                                explanation=f"Value {d[feature]} is {abs(z_score):.2f} standard deviations from mean",
+                                severity='high' if abs(z_score) > threshold + 1 else 'medium',
+                            ))
         except Exception as e:
-            print(f"Statistical anomaly detection error: {e}")
-        
+            print(f"Z-score anomaly detection error: {e}")
         return anomalies
-    
+
+    def _iqr_anomalies(self, data: List[Dict[str, Any]],
+                       k: float = 1.5) -> List[Anomaly]:
+        """IQR anomalies only (split out of the fused statistical pass)."""
+        anomalies: List[Anomaly] = []
+        try:
+            for feature, values in self._numeric_feature_values(data):
+                sorted_values = sorted(values)
+                q1 = sorted_values[len(sorted_values) // 4]
+                q3 = sorted_values[3 * len(sorted_values) // 4]
+                iqr = q3 - q1
+                lower_bound = q1 - k * iqr
+                upper_bound = q3 + k * iqr
+                for i, d in enumerate(data):
+                    if feature in d and isinstance(d[feature], (int, float)):
+                        if d[feature] < lower_bound or d[feature] > upper_bound:
+                            anomalies.append(Anomaly(
+                                anomaly_id=f"iqr_{feature}_{i}",
+                                entity_id=d.get('id', str(i)),
+                                entity_type=d.get('entity_type', 'node'),
+                                score=1.0,
+                                features={feature: d[feature]},
+                                timestamp=d.get('timestamp'),
+                                method='iqr',
+                                explanation=f"Value {d[feature]} is outside IQR range [{lower_bound:.2f}, {upper_bound:.2f}]",
+                                severity='high',
+                            ))
+        except Exception as e:
+            print(f"IQR anomaly detection error: {e}")
+        return anomalies
+
+    def _detect_statistical_anomalies(self, data: List[Dict[str, Any]]) -> List[Anomaly]:
+        """Detect anomalies using statistical methods (z-score + IQR)."""
+        return self._zscore_anomalies(data) + self._iqr_anomalies(data)
+
     def _detect_isolation_forest_anomalies(self, data: List[Dict[str, Any]]) -> List[Anomaly]:
         """Detect anomalies using Isolation Forest."""
         if not SKLEARN_AVAILABLE or not data or len(data) < self.config.min_entities:
@@ -618,8 +702,8 @@ class AnomalyDetector:
         start_time = time.time()
         
         try:
-            # Get all nodes with timestamps
-            query = "MATCH (n) WHERE EXISTS(n.timestamp) RETURN n"
+            # Get all nodes with timestamps (EXISTS(prop) is Neo4j-4 syntax)
+            query = "MATCH (n) WHERE n.timestamp IS NOT NULL RETURN n"
             result = self.graph_engine.execute_query(query)
             
             if not result:

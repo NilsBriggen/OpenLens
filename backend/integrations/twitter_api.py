@@ -15,7 +15,7 @@ Dependencies:
 
 import os
 import json
-from typing import Dict, List, Any, Optional, Generator
+from typing import Dict, List, Any, Optional, Generator, Tuple, Callable
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 import time

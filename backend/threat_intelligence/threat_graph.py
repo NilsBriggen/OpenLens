@@ -267,12 +267,19 @@ class ThreatGraph:
                 print(f"Error building threat graph: {e}")
                 return False
     
+    @staticmethod
+    def _node_indicator(node) -> str:
+        """Best-effort indicator value carried by a graph node."""
+        props = getattr(node, 'properties', {}) or {}
+        return str(props.get('indicator') or props.get('value') or props.get('name') or '')
+
     def _is_threat_node(self, node) -> bool:
         """Check if a node is a threat."""
-        # Check if node is an IOC
+        # Check if node is an IOC. get_ioc is keyed by indicator value, so
+        # look up via the node's indicator property - node ids never match.
         if self.ioc_manager:
-            ioc = self.ioc_manager.get_ioc(node.node_id)
-            if ioc:
+            indicator = self._node_indicator(node)
+            if indicator and self.ioc_manager.get_ioc(indicator):
                 return True
         
         # Check for threat-related labels
@@ -293,9 +300,10 @@ class ThreatGraph:
         """Calculate threat score for a node."""
         score = 0.0
         
-        # Check if node is an IOC
+        # Check if node is an IOC (indicator lookup, as in _is_threat_node)
         if self.ioc_manager:
-            ioc = self.ioc_manager.get_ioc(node.node_id)
+            indicator = self._node_indicator(node)
+            ioc = self.ioc_manager.get_ioc(indicator) if indicator else None
             if ioc:
                 # Use IOC confidence and severity
                 severity_scores = {'low': 0.25, 'medium': 0.5, 'high': 0.75, 'critical': 1.0}
@@ -338,9 +346,10 @@ class ThreatGraph:
         """Get threat types for a node."""
         threat_types = set()
         
-        # Check if node is an IOC
+        # Check if node is an IOC (indicator lookup, as in _is_threat_node)
         if self.ioc_manager:
-            ioc = self.ioc_manager.get_ioc(node.node_id)
+            indicator = self._node_indicator(node)
+            ioc = self.ioc_manager.get_ioc(indicator) if indicator else None
             if ioc and ioc.threat_type:
                 threat_types.add(ioc.threat_type)
         
@@ -539,24 +548,41 @@ class ThreatGraph:
         
         return clusters
     
-    def find_threat_paths(self, source_id: str, target_id: str = None,
-                         max_length: int = None) -> List[ThreatPath]:
+    def find_threat_paths(self, source_id: str = None, target_id: str = None,
+                         max_length: int = None, top_k: int = 5) -> List[ThreatPath]:
         """
         Find paths between threat nodes.
-        
+
         Args:
-            source_id: Source node ID.
+            source_id: Source node ID. None means "paths among the top_k
+                highest-scoring threat nodes" - a useful default instead of
+                the TypeError the no-arg call used to raise.
             target_id: Target node ID (None for all paths from source).
             max_length: Maximum path length.
-            
+            top_k: How many top-scoring nodes to pair up when source_id is None.
+
         Returns:
             List of ThreatPath objects.
         """
         self.build_threat_graph()
-        
+
         if not self._threat_graph:
             return []
-        
+
+        if source_id is None:
+            # Pair up the highest-scoring threat nodes.
+            scored = sorted(
+                self._threat_graph.nodes(data=True),
+                key=lambda item: item[1].get('threat_score', 0),
+                reverse=True,
+            )[:max(2, top_k)]
+            node_ids = [node_id for node_id, _ in scored]
+            paths: List[ThreatPath] = []
+            for i, src in enumerate(node_ids):
+                for dst in node_ids[i + 1:]:
+                    paths.extend(self.find_threat_paths(src, dst, max_length))
+            return paths
+
         max_length = max_length or self.config.max_depth
         
         paths = []

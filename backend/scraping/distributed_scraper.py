@@ -399,6 +399,36 @@ class DistributedScraper:
         parsed = urlparse(url)
         return parsed.netloc
     
+    def create_scrape_job(self, urls: List[str], name: str = '', depth: int = 1,
+                          use_proxy: bool = True, use_cache: bool = True,
+                          render_js: bool = False) -> str:
+        """
+        Create a job from router-shaped arguments; returns the job id
+        (create_job returns the ScrapingJob object).
+        """
+        job = self.create_job(
+            name=name or f'scrape-{int(time.time())}',
+            urls=urls,
+            config={
+                'depth': depth,
+                'use_proxy': use_proxy,
+                'use_cache': use_cache,
+                'render_js': render_js,
+            },
+        )
+        return job.job_id
+
+    def execute_scrape_job(self, job_id: str, use_celery: bool = False) -> "ScrapingJob":
+        """Alias-shaped wrapper over execute_job for background-task callers."""
+        return self.execute_job(job_id, use_celery=use_celery)
+
+    def get_job_results(self, job_id: str) -> List[Dict[str, Any]]:
+        """Results of a job as serialisable dicts; [] when the job is unknown."""
+        job = self.get_job(job_id)
+        if not job:
+            return []
+        return [r.to_dict() if hasattr(r, 'to_dict') else r for r in job.results]
+
     def get_job(self, job_id: str) -> Optional[ScrapingJob]:
         """
         Get a scraping job.

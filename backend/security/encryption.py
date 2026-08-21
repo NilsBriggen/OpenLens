@@ -13,6 +13,7 @@ import os
 import base64
 import hashlib
 import json
+import logging
 import secrets
 import threading
 from typing import Dict, List, Any, Optional, Tuple, Set, Union
@@ -25,13 +26,27 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import padding as sym_padding
 from cryptography.hazmat.backends import default_backend
 
+from backend.paths import resolve_dir
+
+
+logger = logging.getLogger(__name__)
+
+
+def _key_dir() -> str:
+    """Directory holding the RSA key pair. Override with OPENLENS_KEY_DIR."""
+    return resolve_dir('OPENLENS_KEY_DIR', '/etc/openlens', 'keys')
+
 
 @dataclass
 class EncryptionConfig:
     """Configuration for encryption service."""
     symmetric_key: str = ''  # Base64 encoded symmetric key
-    private_key_path: str = '/etc/openlens/private_key.pem'
-    public_key_path: str = '/etc/openlens/public_key.pem'
+    private_key_path: str = field(
+        default_factory=lambda: os.path.join(_key_dir(), 'private_key.pem')
+    )
+    public_key_path: str = field(
+        default_factory=lambda: os.path.join(_key_dir(), 'public_key.pem')
+    )
     key_derivation_salt: str = ''
     key_derivation_iterations: int = 100000
     hash_algorithm: str = 'SHA256'
@@ -155,7 +170,8 @@ class EncryptionService:
         self._public_key = None
         self._key_cache: Dict[str, Any] = {}
         self._lock = threading.Lock()
-        
+        self._keys_persisted = False
+
         # Load or generate keys
         self._load_or_generate_keys()
     
@@ -219,32 +235,51 @@ class EncryptionService:
             )
     
     def _save_asymmetric_keys(self):
-        """Save asymmetric keys to files."""
-        # Create directory if it doesn't exist
-        private_dir = os.path.dirname(self.config.private_key_path)
-        public_dir = os.path.dirname(self.config.public_key_path)
-        
-        if private_dir and not os.path.exists(private_dir):
-            os.makedirs(private_dir, exist_ok=True)
-        if public_dir and not os.path.exists(public_dir):
-            os.makedirs(public_dir, exist_ok=True)
-        
-        # Save private key
-        with open(self.config.private_key_path, 'wb') as f:
-            pem = self._private_key.private_bytes(
+        """
+        Save asymmetric keys to files.
+
+        If the key directory is not writable the freshly generated keys are kept
+        in memory for this process only, rather than aborting startup. That is
+        logged loudly because it means keys do not survive a restart.
+        """
+        try:
+            # Create directory if it doesn't exist
+            private_dir = os.path.dirname(self.config.private_key_path)
+            public_dir = os.path.dirname(self.config.public_key_path)
+
+            if private_dir and not os.path.exists(private_dir):
+                os.makedirs(private_dir, exist_ok=True)
+            if public_dir and not os.path.exists(public_dir):
+                os.makedirs(public_dir, exist_ok=True)
+
+            # Save private key, readable only by the owner.
+            private_pem = self._private_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption()
             )
-            f.write(pem)
-        
-        # Save public key
-        with open(self.config.public_key_path, 'wb') as f:
-            pem = self._public_key.public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            fd = os.open(self.config.private_key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'wb') as f:
+                f.write(private_pem)
+
+            # Save public key
+            with open(self.config.public_key_path, 'wb') as f:
+                pem = self._public_key.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                )
+                f.write(pem)
+        except OSError as exc:
+            self._keys_persisted = False
+            logger.warning(
+                'Could not persist RSA key pair to %s (%s). Using in-memory keys '
+                'for this process only; anything encrypted now cannot be decrypted '
+                'after a restart. Set OPENLENS_KEY_DIR to a writable path.',
+                os.path.dirname(self.config.private_key_path),
+                exc,
             )
-            f.write(pem)
+        else:
+            self._keys_persisted = True
     
     def encrypt_symmetric(self, plaintext: str, key: bytes = None, 
                         key_id: str = 'default') -> EncryptionResult:

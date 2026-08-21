@@ -427,15 +427,15 @@ class EntityResolver:
             # Find entities that are connected in the graph
             for entity in entities:
                 # Find nodes in the graph that match this entity
-                query = f"MATCH (n) WHERE n.id = '{entity.entity_id}' RETURN n"
-                result = self.graph_engine.execute_query(query)
+                query = "MATCH (n) WHERE n.id = $id RETURN n"
+                result = self.graph_engine.execute_query(query, {'id': entity.entity_id})
                 
                 if not result or not result.nodes:
                     continue
                 
                 # Find connected nodes
-                query = f"MATCH (n)-[r]->(m) WHERE n.id = '{entity.entity_id}' RETURN m"
-                result = self.graph_engine.execute_query(query)
+                query = "MATCH (n)-[r]->(m) WHERE n.id = $id RETURN m"
+                result = self.graph_engine.execute_query(query, {'id': entity.entity_id})
                 
                 if result:
                     for connected_node in result.nodes:
@@ -519,6 +519,96 @@ class EntityResolver:
         
         return clusters
     
+    _RESERVED_ENTITY_KEYS = {'entity_id', 'id', 'type', 'source', 'confidence', 'attributes'}
+
+    def _coerce_entities(self, entities: List[Union["Entity", Dict[str, Any]]]) -> List["Entity"]:
+        """
+        Accept raw dicts (as the API router sends) alongside Entity objects.
+
+        A dict may carry explicit 'attributes'; otherwise every non-reserved
+        key becomes an attribute.
+        """
+        import uuid as _uuid
+
+        coerced: List[Entity] = []
+        for index, item in enumerate(entities):
+            if isinstance(item, Entity):
+                coerced.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            attributes = item.get('attributes')
+            if not isinstance(attributes, dict):
+                attributes = {k: v for k, v in item.items()
+                              if k not in self._RESERVED_ENTITY_KEYS}
+            coerced.append(Entity(
+                entity_id=str(item.get('entity_id') or item.get('id') or _uuid.uuid4()),
+                type=str(item.get('type', '')),
+                attributes=attributes,
+                source=str(item.get('source', '')),
+                confidence=float(item.get('confidence', 1.0)),
+            ))
+        return coerced
+
+    def resolve_exact(self, entities: List[Union["Entity", Dict[str, Any]]]) -> EntityResolutionResult:
+        """Public: exact matching over entities or raw dicts."""
+        return self.resolve_entities(self._coerce_entities(entities), method='exact')
+
+    def resolve_fuzzy(self, entities: List[Union["Entity", Dict[str, Any]]],
+                      threshold: float = None) -> EntityResolutionResult:
+        """
+        Public: fuzzy matching. Raises when no fuzzy library is installed -
+        an empty result here would be indistinguishable from "no duplicates".
+        """
+        if not (FUZZYWUZZY_AVAILABLE or RAPIDFUZZ_AVAILABLE):
+            raise RuntimeError(
+                'fuzzy matching requires rapidfuzz (or fuzzywuzzy); '
+                'install with: pip install rapidfuzz')
+        resolver = self
+        if threshold is not None:
+            # Never mutate the module singleton's config per request.
+            from dataclasses import replace as _replace
+            resolver = EntityResolver(
+                graph_engine=self.graph_engine,
+                config=_replace(self.config, fuzzy_threshold=float(threshold)),
+            )
+        return resolver.resolve_entities(self._coerce_entities(entities), method='fuzzy')
+
+    def resolve_record_linkage(self, entities: List[Union["Entity", Dict[str, Any]]]) -> EntityResolutionResult:
+        """Public: record-linkage matching (requires the recordlinkage library)."""
+        if not (RECORDLINKAGE_AVAILABLE and PANDAS_AVAILABLE):
+            raise RuntimeError(
+                'record linkage requires the recordlinkage and pandas libraries; '
+                'install with: pip install recordlinkage pandas')
+        return self.resolve_entities(self._coerce_entities(entities), method='record_linkage')
+
+    def resolve_graph_based(self, entities: List[Union["Entity", Dict[str, Any]]]) -> EntityResolutionResult:
+        """Public: graph-based matching."""
+        return self.resolve_entities(self._coerce_entities(entities), method='graph')
+
+    def deduplicate_entities(self, entity_type: str = None,
+                             apply: bool = False) -> Dict[str, Any]:
+        """
+        Find (and optionally merge) duplicate entities in the graph.
+
+        Dry-run by default: merging issues DETACH DELETE against the graph, so
+        destruction must be an explicit opt-in.
+
+        Returns:
+            {'clusters': [...], 'merged': int, 'applied': bool}
+        """
+        clusters = self.find_duplicate_entities(entity_type)
+        merged = 0
+        if apply:
+            for cluster in clusters:
+                if self.merge_duplicate_entities(cluster):
+                    merged += 1
+        return {
+            'clusters': [c.to_dict() for c in clusters],
+            'merged': merged,
+            'applied': apply,
+        }
+
     def resolve_from_graph(self, entity_type: str = None) -> EntityResolutionResult:
         """
         Resolve entities from the graph.
@@ -593,45 +683,61 @@ class EntityResolver:
             # Get the representative entity
             representative = cluster.representative
             
-            # For each entity in the cluster (except representative), merge its data
+            # For each entity in the cluster (except representative), merge its
+            # data. All queries parameterised - the old code interpolated ids
+            # into Cypher, and its relationship-redirect query was not valid
+            # Cypher at all (so relationships were silently dropped before the
+            # DETACH DELETE).
             for entity_id in cluster.entities:
                 if entity_id == representative:
                     continue
-                
-                # Get the entity to merge
-                query = f"MATCH (n) WHERE n.id = '{entity_id}' RETURN n"
-                result = self.graph_engine.execute_query(query)
-                
+
+                result = self.graph_engine.execute_query(
+                    "MATCH (n) WHERE n.id = $id RETURN n", {'id': entity_id})
                 if not result or not result.nodes:
                     continue
-                
                 entity_node = result.nodes[0]
-                
-                # Get the representative node
-                query = f"MATCH (n) WHERE n.id = '{representative}' RETURN n"
-                result = self.graph_engine.execute_query(query)
-                
+
+                result = self.graph_engine.execute_query(
+                    "MATCH (n) WHERE n.id = $id RETURN n", {'id': representative})
                 if not result or not result.nodes:
                     continue
-                
                 rep_node = result.nodes[0]
-                
-                # Merge properties
-                merged_properties = {**rep_node.properties, **entity_node.properties}
-                
-                # Update representative node
-                query = f"MATCH (n) WHERE n.id = '{representative}' SET n += $props"
-                params = {'props': merged_properties}
-                self.graph_engine.execute_query(query, params)
-                
-                # Redirect relationships from entity to representative
-                query = f"MATCH ()-[r]->(n) WHERE n.id = '{entity_id}' CREATE (r.start)-[:MERGED_FROM]->(m) WHERE m.id = '{representative}'"
-                self.graph_engine.execute_query(query)
-                
-                # Delete the entity node
-                query = f"MATCH (n) WHERE n.id = '{entity_id}' DETACH DELETE n"
-                self.graph_engine.execute_query(query)
-            
+
+                # Merge properties (representative wins on conflict, but keeps
+                # its own id).
+                merged_properties = {**entity_node.properties, **rep_node.properties}
+                merged_properties['id'] = representative
+
+                self.graph_engine.execute_query(
+                    "MATCH (n) WHERE n.id = $id SET n += $props",
+                    {'id': representative, 'props': merged_properties})
+
+                # Redirect relationships. Cypher cannot recreate a relationship
+                # with a dynamic type, so redirected edges become MERGED_REL
+                # carrying the original type as a property.
+                self.graph_engine.execute_query(
+                    """
+                    MATCH (src)-[r]->(old {id: $entity_id})
+                    MATCH (rep {id: $representative})
+                    WHERE src.id <> $representative
+                    CREATE (src)-[r2:MERGED_REL]->(rep)
+                    SET r2 = properties(r), r2.original_type = type(r)
+                    """,
+                    {'entity_id': entity_id, 'representative': representative})
+                self.graph_engine.execute_query(
+                    """
+                    MATCH (old {id: $entity_id})-[r]->(dst)
+                    MATCH (rep {id: $representative})
+                    WHERE dst.id <> $representative
+                    CREATE (rep)-[r2:MERGED_REL]->(dst)
+                    SET r2 = properties(r), r2.original_type = type(r)
+                    """,
+                    {'entity_id': entity_id, 'representative': representative})
+
+                self.graph_engine.execute_query(
+                    "MATCH (n) WHERE n.id = $id DETACH DELETE n", {'id': entity_id})
+
             return True
         
         except Exception as e:

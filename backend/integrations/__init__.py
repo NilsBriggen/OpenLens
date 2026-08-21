@@ -5,9 +5,8 @@ Provides integration with external services:
 - Google Maps API
 - Twitter API
 - VK API
-- Instagram API
-- Telegram API
-- Other third-party services
+- Geocoding
+- IP geolocation
 """
 
 from .google_maps import GoogleMapsService, google_maps_service

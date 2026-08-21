@@ -378,6 +378,8 @@ class WebScraper:
     def _get_with_playwright(self, url: str, wait_for: str = None, 
                            wait_time: float = 2.0) -> ScraperResponse:
         """Get a page using Playwright."""
+        start_time = time.time()
+
         with sync_playwright() as p:
             # Launch browser
             browser = p.chromium.launch(headless=self.config.headless)
@@ -425,6 +427,8 @@ class WebScraper:
     def _get_with_selenium(self, url: str, wait_for: str = None, 
                           wait_time: float = 2.0) -> ScraperResponse:
         """Get a page using Selenium."""
+        start_time = time.time()
+
         # Initialize driver if not already done
         if not self._javascript_driver:
             self._init_selenium_driver()

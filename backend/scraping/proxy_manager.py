@@ -11,6 +11,7 @@ Provides proxy management capabilities:
 
 import os
 import time
+import threading
 import random
 import json
 import requests
@@ -135,7 +136,7 @@ class ProxyManager:
         self._last_check: datetime = None
         self._last_update: datetime = None
         self._check_interval: int = self.config.check_interval
-        self._lock = False  # Simplified lock for thread safety
+        self._lock = threading.Lock()
     
     def load_proxies(self, source: str = None) -> int:
         """
@@ -305,6 +306,38 @@ class ProxyManager:
             proxy.success_rate = (proxy.success_rate * 0.9) + (0.0 * 0.1)
             return False
     
+    def list_proxies(self, active_only: bool = False, country: str = None,
+                     protocol: str = None) -> List[Proxy]:
+        """
+        List known proxies, optionally filtered.
+
+        Args:
+            active_only: Only proxies that passed their last health check.
+            country: Filter by country code.
+            protocol: Filter by protocol.
+
+        Returns:
+            List of Proxy objects.
+        """
+        with self._lock:
+            proxies = list(self._active_proxies if active_only else self._proxies)
+
+        if country:
+            proxies = [p for p in proxies if p.country == country]
+        if protocol:
+            proxies = [p for p in proxies if p.protocol == protocol]
+        return proxies
+
+    def check_all_proxies(self, force: bool = True) -> List[Proxy]:
+        """
+        Health-check every proxy and return the active list.
+
+        check_proxies() returns only a count; this returns the proxies
+        themselves for callers that render the result.
+        """
+        self.check_proxies(force=force)
+        return self.list_proxies(active_only=True)
+
     def get_proxy(self, country: str = None, protocol: str = None) -> Optional[Proxy]:
         """
         Get a random active proxy.

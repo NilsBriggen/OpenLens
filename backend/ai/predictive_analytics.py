@@ -287,54 +287,125 @@ class PredictiveAnalyzer:
             print(f"Link prediction error: {e}")
             return PredictionResult(method='link_prediction')
     
-    def _extract_link_features(self, graph: nx.Graph, u: str, v: str) -> List[float]:
-        """Extract features for link prediction."""
-        features = []
-        
+    # Column order of the feature matrix fed to the sklearn models. Named so
+    # per-metric accessors index by key, never by position - a positional slip
+    # here once made metrics silently interchangeable.
+    _FEATURE_ORDER = ('degree_u', 'degree_v', 'common_neighbors', 'jaccard',
+                      'preferential_attachment', 'adamic_adar', 'distance')
+
+    def _link_features(self, graph: "nx.Graph", u: str, v: str) -> Dict[str, float]:
+        """Named link-prediction features for a node pair."""
+        features = {name: 0.0 for name in self._FEATURE_ORDER}
+        features['distance'] = 100.0
+
         try:
-            # Node degree features
             degree_u = graph.degree(u)
             degree_v = graph.degree(v)
-            features.extend([degree_u, degree_v])
-            
-            # Common neighbors
-            common_neighbors = len(set(graph.neighbors(u)) & set(graph.neighbors(v)))
-            features.append(common_neighbors)
-            
-            # Jaccard coefficient
             neighbors_u = set(graph.neighbors(u))
             neighbors_v = set(graph.neighbors(v))
+            common = neighbors_u & neighbors_v
             union = len(neighbors_u | neighbors_v)
-            jaccard = len(neighbors_u & neighbors_v) / union if union > 0 else 0
-            features.append(jaccard)
-            
-            # Preferential attachment
-            pref_attach = degree_u * degree_v
-            features.append(pref_attach)
-            
-            # Adamic-Adar index
-            adamic_adar = 0
-            for neighbor in neighbors_u & neighbors_v:
-                degree_neighbor = graph.degree(neighbor)
-                adamic_adar += 1 / math.log(degree_neighbor + 1)
-            features.append(adamic_adar)
-            
-            # Shortest path distance (if not directly connected)
+
+            features['degree_u'] = float(degree_u)
+            features['degree_v'] = float(degree_v)
+            features['common_neighbors'] = float(len(common))
+            features['jaccard'] = len(common) / union if union > 0 else 0.0
+            features['preferential_attachment'] = float(degree_u * degree_v)
+            features['adamic_adar'] = sum(
+                1.0 / math.log(graph.degree(n) + 1) for n in common
+                if graph.degree(n) > 0
+            )
+
             try:
-                if not graph.has_edge(u, v):
-                    distance = nx.shortest_path_length(graph, u, v)
+                if graph.has_edge(u, v):
+                    features['distance'] = 1.0
                 else:
-                    distance = 1
-                features.append(distance)
-            except:
-                features.append(100)  # Large distance if no path
-        
+                    features['distance'] = float(nx.shortest_path_length(graph, u, v))
+            except Exception:
+                features['distance'] = 100.0
         except Exception as e:
             print(f"Feature extraction error: {e}")
-            # Return default features
-            features = [0, 0, 0, 0, 0, 0, 100]
-        
+
         return features
+
+    def _extract_link_features(self, graph: "nx.Graph", u: str, v: str) -> List[float]:
+        """Feature vector in _FEATURE_ORDER (for the model pipelines)."""
+        named = self._link_features(graph, u, v)
+        return [named[key] for key in self._FEATURE_ORDER]
+
+    def _link_metric(self, node_1: str, node_2: str, key: str) -> float:
+        """One named metric for a pair, from the live graph."""
+        if not NETWORKX_AVAILABLE or not self.graph_engine:
+            return 0.0
+        graph = self.graph_engine.to_networkx()
+        if graph is None or node_1 not in graph or node_2 not in graph:
+            return 0.0
+        return self._link_features(graph, node_1, node_2)[key]
+
+    def predict_link_common_neighbors(self, node_1: str, node_2: str) -> float:
+        """Common-neighbours score for a node pair."""
+        return self._link_metric(node_1, node_2, 'common_neighbors')
+
+    def predict_link_jaccard(self, node_1: str, node_2: str) -> float:
+        """Jaccard coefficient for a node pair."""
+        return self._link_metric(node_1, node_2, 'jaccard')
+
+    def predict_link_adamic_adar(self, node_1: str, node_2: str) -> float:
+        """Adamic-Adar index for a node pair."""
+        return self._link_metric(node_1, node_2, 'adamic_adar')
+
+    def predict_link_preferential_attachment(self, node_1: str, node_2: str) -> float:
+        """Preferential-attachment score for a node pair."""
+        return self._link_metric(node_1, node_2, 'preferential_attachment')
+
+    _LINK_METHODS = {
+        'common_neighbors': 'common_neighbors',
+        'jaccard': 'jaccard',
+        'adamic_adar': 'adamic_adar',
+        'preferential_attachment': 'preferential_attachment',
+    }
+
+    def score_link(self, node_1: str, node_2: str,
+                   method: str = 'common_neighbors') -> float:
+        """
+        One-call per-pair link score.
+
+        Raises:
+            ValueError: For an unknown method.
+        """
+        key = self._LINK_METHODS.get(method)
+        if key is None:
+            raise ValueError(
+                f"unknown link method {method!r}; "
+                f"allowed: {sorted(self._LINK_METHODS)}")
+        return self._link_metric(node_1, node_2, key)
+
+    def predict_node_classification(self, node_id: str,
+                                    features: Dict[str, float] = None,
+                                    method: str = 'random_forest',
+                                    label_attribute: str = 'label') -> Optional[Prediction]:
+        """
+        Predict the label of a single node.
+
+        Trains via predict_node_labels (whole-graph) and picks out this node's
+        prediction. The features argument is accepted for API compatibility
+        and recorded on the result, but training features come from the graph.
+
+        Returns:
+            Prediction for the node, or None when the node is absent or the
+            model could not be trained.
+        """
+        result = self.predict_node_labels(label_attribute=label_attribute,
+                                          method=method)
+        if not result or not result.predictions:
+            return None
+
+        for prediction in result.predictions:
+            if prediction.entity_id == node_id:
+                if features:
+                    prediction.features = {**prediction.features, **features}
+                return prediction
+        return None
     
     def predict_node_labels(self, label_attribute: str = 'label', 
                            method: str = None) -> PredictionResult:
@@ -725,13 +796,13 @@ class PredictiveAnalyzer:
             has_indicator = 1 if any(indicator in str(node.properties).lower() for indicator in threat_indicators) else 0
             features.append(has_indicator)
             
-            # Node degree
+            # Node degree. size((n)--()) is Neo4j-4 syntax; COUNT {} is the
+            # Neo4j 5 form, and the scalar arrives via .records, not .nodes.
             if self.graph_engine:
-                query = f"MATCH (n) WHERE n.id = '{node.node_id}' RETURN size((n)--())"
-                result = self.graph_engine.execute_query(query)
-                if result and result.nodes:
-                    degree = int(result.nodes[0].properties.get('size((n)--())', 0))
-                    features.append(degree)
+                query = "MATCH (n) WHERE n.id = $node_id RETURN COUNT { (n)--() } AS degree"
+                records = self.graph_engine.execute_records(query, {'node_id': node.node_id})
+                degree = int(records[0].get('degree', 0)) if records else 0
+                features.append(degree)
             else:
                 features.append(0)
             

@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+from .ioc_manager import IOCSearchQuery
+
 
 @dataclass
 class Hunt:
@@ -236,6 +238,78 @@ class ThreatHunter:
         
         return hunt
     
+    def _one_shot(self, hunt_type: str, parameters: Dict,
+                  name: str = '', created_by: str = '') -> Hunt:
+        """
+        Create and immediately execute a hunt.
+
+        The two-step create/execute API stays canonical - it owns the hunt
+        record, concurrency admission and the pending queue. These wrappers
+        exist for callers that want a single call; note the returned hunt may
+        still be 'pending' when the hunter is at max_concurrent_hunts, in
+        which case the caller should poll get_hunt(hunt.hunt_id).
+        """
+        hunt = self.create_hunt(
+            name=name or f'{hunt_type} hunt',
+            hunt_type=hunt_type,
+            parameters=parameters,
+            created_by=created_by,
+        )
+        executed = self.execute_hunt(hunt.hunt_id)
+        return executed or hunt
+
+    def hypothesis_driven_hunt(self, query: str, name: str = '',
+                               created_by: str = '') -> Hunt:
+        """One-shot hypothesis hunt over a Cypher query."""
+        return self._one_shot('hypothesis', {'query': query}, name, created_by)
+
+    def anomaly_based_hunt(self, name: str = '', created_by: str = '') -> Hunt:
+        """One-shot anomaly hunt using the wired anomaly detector."""
+        return self._one_shot('anomaly', {}, name, created_by)
+
+    def ioc_based_hunt(self, ioc_ids: List[str] = None,
+                       ioc_query: Dict = None, name: str = '',
+                       created_by: str = '') -> Hunt:
+        """One-shot IOC hunt over specific IOC ids or a search query."""
+        return self._one_shot(
+            'ioc',
+            {'ioc_ids': ioc_ids or [], 'ioc_query': ioc_query or {}},
+            name, created_by,
+        )
+
+    def behavioral_hunt(self, patterns: List[Dict[str, Any]] = None,
+                        name: str = '', created_by: str = '') -> Hunt:
+        """
+        One-shot behavioral hunt. Defaults to a degree pattern - the executor
+        records an error result for an empty pattern list.
+        """
+        return self._one_shot(
+            'behavioral',
+            {'patterns': patterns or [{'type': 'degree', 'value': 5}]},
+            name, created_by,
+        )
+
+    def pattern_matching_hunt(self, pattern_id: str = None, pattern: str = None,
+                              pattern_type: str = 'cypher', name: str = '',
+                              created_by: str = '') -> Hunt:
+        """
+        One-shot pattern hunt. Accepts either a registered pattern id or a raw
+        pattern, which is registered as an ephemeral HuntPattern first (the
+        executor resolves patterns by id only).
+        """
+        if not pattern_id and pattern:
+            ephemeral = HuntPattern(
+                pattern_id=f'adhoc_{int(time.time() * 1000)}',
+                name=name or 'ad-hoc pattern',
+                pattern_type=pattern_type,
+                pattern=pattern,
+            )
+            with self._lock:
+                self._patterns[ephemeral.pattern_id] = ephemeral
+            pattern_id = ephemeral.pattern_id
+        return self._one_shot('pattern', {'pattern_id': pattern_id or ''},
+                              name, created_by)
+
     def execute_hunt(self, hunt_id: str) -> Optional[Hunt]:
         """
         Execute a threat hunt.
@@ -297,9 +371,11 @@ class ThreatHunter:
         finally:
             with self._lock:
                 self._running_hunts.discard(hunt_id)
-                # Run next pending hunt if any
-                self._run_next_pending_hunt()
-        
+            # Outside the lock: _run_next_pending_hunt acquires it itself, and
+            # threading.Lock is not reentrant - the old nested acquisition
+            # deadlocked every execute_hunt call.
+            self._run_next_pending_hunt()
+
         return hunt
     
     def _run_next_pending_hunt(self):
@@ -434,11 +510,13 @@ class ThreatHunter:
             else:
                 iocs = self.ioc_manager.search_iocs(IOCSearchQuery(**ioc_query))
             
-            # Search for each IOC in the graph
+            # Search for each IOC in the graph. Parameterised: indicators come
+            # straight from threat feeds - attacker-influenced data must never
+            # be interpolated into Cypher.
             for ioc in iocs:
                 # Search for exact match
-                query = f"MATCH (n) WHERE n.indicator = '{ioc.indicator}' RETURN n"
-                result = self.graph_engine.execute_query(query)
+                query = "MATCH (n) WHERE n.indicator = $indicator RETURN n"
+                result = self.graph_engine.execute_query(query, {'indicator': ioc.indicator})
                 
                 if result and result.nodes:
                     for node in result.nodes:
@@ -456,9 +534,10 @@ class ThreatHunter:
                             },
                         })
                 
-                # Search for partial match
-                query = f"MATCH (n) WHERE ANY(prop IN keys(n) WHERE toLower(toString(n[prop])) CONTAINS toLower('{ioc.indicator}')) RETURN n"
-                result = self.graph_engine.execute_query(query)
+                # Search for partial match (parameterised, see above)
+                query = ("MATCH (n) WHERE ANY(prop IN keys(n) "
+                         "WHERE toLower(toString(n[prop])) CONTAINS toLower($indicator)) RETURN n")
+                result = self.graph_engine.execute_query(query, {'indicator': ioc.indicator})
                 
                 if result and result.nodes:
                     for node in result.nodes:
@@ -506,9 +585,15 @@ class ThreatHunter:
                 pattern_value = pattern.get('value', '')
                 
                 if pattern_type == 'degree':
-                    # Find nodes with degree > value
-                    query = f"MATCH (n) WHERE size((n)--()) > {pattern_value} RETURN n"
-                    result = self.graph_engine.execute_query(query)
+                    # Find nodes with degree > value. Parameterised (the old
+                    # f-string interpolated caller data into Cypher) and using
+                    # Neo4j 5's COUNT {} in place of size((n)--()).
+                    try:
+                        degree_threshold = int(pattern_value)
+                    except (TypeError, ValueError):
+                        continue
+                    query = "MATCH (n) WHERE COUNT { (n)--() } > $threshold RETURN n"
+                    result = self.graph_engine.execute_query(query, {'threshold': degree_threshold})
                     
                     if result and result.nodes:
                         for node in result.nodes:

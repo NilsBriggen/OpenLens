@@ -43,8 +43,12 @@ class Permission:
     
     def matches(self, resource: str, action: str) -> bool:
         """Check if this permission matches a resource and action."""
-        # Wildcard matching
-        if self.resource == '*' or self.action == '*':
+        # Wildcard matching. Each wildcard only widens its own axis: with the
+        # old `or`, a permission scoped to one resource with action '*'
+        # granted every resource in the system.
+        resource_ok = self.resource == '*' or self.resource == resource
+        action_ok = self.action == '*' or self.action == action
+        if resource_ok and action_ok:
             return True
         
         if self.resource == resource and self.action == action:
@@ -234,6 +238,34 @@ class RBAC:
                 action='manage',
             ),
             Permission(
+                permission_id='scraper:read',
+                name='Read Scraper',
+                description='Read access to scraping jobs and settings',
+                resource='scraper',
+                action='read',
+            ),
+            Permission(
+                permission_id='threat:read',
+                name='Read Threat Intelligence',
+                description='Read access to threat feeds, IOCs and alerts',
+                resource='threat',
+                action='read',
+            ),
+            Permission(
+                permission_id='threat:write',
+                name='Write Threat Intelligence',
+                description='Create and modify threat feeds, IOCs and alerts',
+                resource='threat',
+                action='write',
+            ),
+            Permission(
+                permission_id='system:read',
+                name='Read System',
+                description='Read access to system status and configuration',
+                resource='system',
+                action='read',
+            ),
+            Permission(
                 permission_id='admin:all',
                 name='Admin Access',
                 description='Full access to all resources',
@@ -251,13 +283,16 @@ class RBAC:
                 role_id='viewer',
                 name='Viewer',
                 description='Read-only access to data',
-                permissions=['graph:read'],
+                permissions=['graph:read', 'threat:read', 'system:read',
+                             'scraper:read'],
             ),
             Role(
                 role_id='analyst',
                 name='Analyst',
                 description='Access to analysis tools',
-                permissions=['graph:read', 'graph:write', 'ai:analyze'],
+                permissions=['graph:read', 'graph:write', 'ai:analyze',
+                             'threat:read', 'threat:write', 'system:read',
+                             'scraper:read'],
             ),
             Role(
                 role_id='scraper',

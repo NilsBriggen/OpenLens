@@ -9,6 +9,7 @@ Provides authorization capabilities:
 - Access decision logging
 """
 
+import hashlib
 import time
 import json
 import threading

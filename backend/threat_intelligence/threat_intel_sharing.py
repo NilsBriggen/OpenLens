@@ -439,30 +439,64 @@ class ThreatIntelSharing:
         
         return query
     
+    # Per-type STIX pattern templates. The old code emitted
+    # network-traffic:dst_ref.value for every non-hash type, so domains, URLs
+    # and emails all round-tripped back as 'ip'.
+    _STIX_PATTERNS = {
+        'ip': "[ipv4-addr:value = '{v}']",
+        'domain': "[domain-name:value = '{v}']",
+        'url': "[url:value = '{v}']",
+        'email': "[email-addr:value = '{v}']",
+    }
+
+    @staticmethod
+    def _hash_algorithm(indicator: str) -> str:
+        """Guess the hash algorithm from the *indicator's* length."""
+        length = len(indicator or '')
+        if length == 32:
+            return 'MD5'
+        if length == 40:
+            return 'SHA-1'
+        return 'SHA-256'
+
+    def _stix_pattern(self, ioc: Any) -> str:
+        """Build the STIX pattern for one IOC."""
+        if ioc.indicator_type == 'hash':
+            algo = self._hash_algorithm(ioc.indicator)
+            return f"[file:hashes.'{algo}' = '{ioc.indicator}']"
+        template = self._STIX_PATTERNS.get(ioc.indicator_type)
+        if template:
+            return template.format(v=ioc.indicator)
+        return f"[artifact:payload_bin = '{ioc.indicator}']"
+
     def _convert_to_stix(self, iocs: List[Any]) -> Dict[str, Any]:
-        """Convert IOCs to STIX format."""
-        # Simplified STIX conversion
+        """
+        Convert IOCs to a STIX-2.1-shaped bundle.
+
+        Note: this is hand-rolled and not validated against the STIX schema
+        (the stix2 library is optional and not required here).
+        """
         stix_objects = []
-        
+
         for ioc in iocs:
             stix_object = {
                 'type': 'indicator',
                 'id': f"indicator--{hashlib.sha256(ioc.indicator.encode()).hexdigest()}",
                 'created': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                 'modified': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
-                'pattern': f"[file:hashes.'{ioc.indicator_type}' = '{ioc.indicator}']" if ioc.indicator_type == 'hash' else f"[network-traffic:dst_ref.value = '{ioc.indicator}']",
+                'pattern': self._stix_pattern(ioc),
                 'pattern_type': 'stix',
                 'valid_from': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                 'labels': [ioc.threat_type] if ioc.threat_type else [],
                 'description': ioc.description,
             }
-            
+
             # Add confidence if available
             if hasattr(ioc, 'confidence'):
                 stix_object['confidence'] = ioc.confidence
-            
+
             stix_objects.append(stix_object)
-        
+
         return {
             'type': 'bundle',
             'id': f"bundle--{hashlib.sha256(str(time.time()).encode()).hexdigest()}",
@@ -484,7 +518,7 @@ class ThreatIntelSharing:
         
         for ioc in iocs:
             attribute = {
-                'type': self._map_indicator_type_to_misp(ioc.indicator_type),
+                'type': self._map_indicator_type_to_misp(ioc.indicator_type, ioc.indicator),
                 'value': ioc.indicator,
                 'comment': ioc.description,
                 'to_ids': True,
@@ -498,13 +532,21 @@ class ThreatIntelSharing:
         
         return misp_event
     
-    def _map_indicator_type_to_misp(self, indicator_type: str) -> str:
-        """Map indicator type to MISP attribute type."""
+    def _map_indicator_type_to_misp(self, indicator_type: str,
+                                    indicator: str = '') -> str:
+        """
+        Map indicator type to MISP attribute type.
+
+        The hash algorithm is chosen from the *indicator's* length; the old
+        code measured the type name ('hash', length 4), mapping every hash to
+        sha256.
+        """
+        if indicator_type == 'hash':
+            return self._hash_algorithm(indicator).lower().replace('-', '')
         mapping = {
             'ip': 'ip-dst',
             'domain': 'domain',
             'url': 'url',
-            'hash': 'md5' if len(indicator_type) == 32 else 'sha1' if len(indicator_type) == 40 else 'sha256',
             'email': 'email-dst',
         }
         return mapping.get(indicator_type, 'text')
@@ -537,24 +579,28 @@ class ThreatIntelSharing:
     
     def _extract_indicator_from_stix(self, pattern: str) -> str:
         """Extract indicator from STIX pattern."""
-        # Simplified extraction
+        # Simplified extraction. Strip the pattern's closing bracket before the
+        # quotes - the old order left a trailing "']" on every indicator, so a
+        # re-imported bundle never matched its own IOCs.
         if '=' in pattern:
-            return pattern.split('=')[1].strip().strip("'\"")
+            value = pattern.split('=', 1)[1].strip()
+            return value.rstrip(']').strip().strip("'\"")
         return pattern
     
     def _extract_indicator_type_from_stix(self, pattern: str) -> str:
         """Extract indicator type from STIX pattern."""
-        if 'hashes' in pattern:
-            if 'md5' in pattern:
-                return 'hash'
-            elif 'sha1' in pattern:
-                return 'hash'
-            elif 'sha256' in pattern:
-                return 'hash'
-        elif 'dst_ref' in pattern or 'src_ref' in pattern:
-            return 'ip'
-        elif 'domain' in pattern:
+        lowered = pattern.lower()
+        if 'file:hashes' in lowered or 'hashes' in lowered:
+            return 'hash'
+        if 'domain-name' in lowered:
             return 'domain'
+        if 'url:value' in lowered:
+            return 'url'
+        if 'email-addr' in lowered:
+            return 'email'
+        if 'ipv4-addr' in lowered or 'ipv6-addr' in lowered \
+                or 'dst_ref' in lowered or 'src_ref' in lowered:
+            return 'ip'
         return 'unknown'
     
     def _convert_from_misp(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -819,10 +865,90 @@ class ThreatIntelSharing:
             
             return stats
     
+    def _resolve_iocs(self, ioc_ids: List[str] = None, query: Any = None) -> List[Any]:
+        """Resolve IOCs by explicit ids, a search query, or all IOCs."""
+        if not self.ioc_manager:
+            return []
+        if ioc_ids:
+            resolved = [self.ioc_manager.get_ioc_by_id(i) for i in ioc_ids]
+            return [ioc for ioc in resolved if ioc]
+        if query is not None:
+            return self.ioc_manager.search_iocs(query)
+        return self.ioc_manager.search_iocs()
+
+    def export_to_stix(self, ioc_ids: List[str] = None, query: Any = None,
+                       validate: bool = False) -> Dict[str, Any]:
+        """
+        Export IOCs as a STIX-2.1-shaped bundle.
+
+        The bundle is hand-rolled, not schema-validated. Pass validate=True
+        only when the stix2 library is installed; without it validation is
+        refused loudly rather than silently skipped.
+
+        Args:
+            ioc_ids: Explicit IOC ids to export (None for query/all).
+            query: IOCSearchQuery selecting the IOCs (None for all).
+            validate: Validate the bundle against the STIX schema.
+
+        Returns:
+            STIX bundle dictionary.
+        """
+        if validate:
+            try:
+                import stix2  # noqa: F401
+            except ImportError:
+                raise RuntimeError(
+                    'stix2 not installed; cannot validate. '
+                    'Install with: pip install stix2, or call with validate=False')
+        return self._convert_to_stix(self._resolve_iocs(ioc_ids, query))
+
+    def import_from_stix(self, stix_data: Union[str, Dict[str, Any]],
+                         source: str = 'stix') -> int:
+        """
+        Import IOCs from a STIX bundle (JSON string or parsed dict).
+
+        Args:
+            stix_data: STIX bundle.
+            source: Source label recorded on the imported IOCs.
+
+        Returns:
+            Number of IOCs added.
+        """
+        if isinstance(stix_data, str):
+            stix_data = json.loads(stix_data)
+        if not isinstance(stix_data, dict):
+            raise ValueError('stix_data must be a JSON object or its string form')
+
+        ioc_dicts = self._convert_from_stix(stix_data)
+        for ioc in ioc_dicts:
+            ioc['source'] = source
+        if not self.ioc_manager:
+            return 0
+        return self.ioc_manager.bulk_add_iocs(ioc_dicts)
+
+    def export_to_misp(self, ioc_ids: List[str] = None, query: Any = None) -> Dict[str, Any]:
+        """Export IOCs as a MISP event dictionary."""
+        return self._convert_to_misp(self._resolve_iocs(ioc_ids, query))
+
+    def import_from_misp(self, misp_data: Union[str, Dict[str, Any]],
+                         source: str = 'misp') -> int:
+        """Import IOCs from a MISP event (JSON string or parsed dict)."""
+        if isinstance(misp_data, str):
+            misp_data = json.loads(misp_data)
+        if not isinstance(misp_data, dict):
+            raise ValueError('misp_data must be a JSON object or its string form')
+
+        ioc_dicts = self._convert_from_misp(misp_data)
+        for ioc in ioc_dicts:
+            ioc['source'] = source
+        if not self.ioc_manager:
+            return 0
+        return self.ioc_manager.bulk_add_iocs(ioc_dicts)
+
     def export_to_json(self) -> str:
         """
         Export sharing data to JSON.
-        
+
         Returns:
             JSON string.
         """

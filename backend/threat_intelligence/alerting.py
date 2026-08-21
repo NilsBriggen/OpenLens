@@ -16,6 +16,11 @@ import json
 import smtplib
 import threading
 import hashlib
+
+import requests
+
+from .ioc_manager import IOC
+from .threat_analysis import ThreatAnalysis
 from typing import Dict, List, Any, Optional, Tuple, Set, Union
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -391,13 +396,23 @@ class AlertManager:
         return True
     
     def _send_notifications(self, alert: Alert, methods: List[str] = None):
-        """Send notifications for an alert."""
+        """
+        Send notifications for an alert.
+
+        A channel with no settings configured is skipped: attempting SMTP or a
+        webhook POST against unconfigured defaults just burns a connection
+        timeout per alert.
+        """
         methods = methods or self.config.notification_methods
-        
+
         for method in methods:
             if method == 'email' and 'email' in self.config.notification_methods:
+                if not self.config.email_settings:
+                    continue
                 self._send_email_notification(alert)
             elif method == 'webhook' and 'webhook' in self.config.notification_methods:
+                if not self.config.webhook_settings.get('url'):
+                    continue
                 self._send_webhook_notification(alert)
             elif method == 'siem':
                 self._send_siem_notification(alert)
@@ -718,6 +733,64 @@ class AlertManager:
         
         return False
     
+    _SEVERITY_LADDER = ('low', 'medium', 'high', 'critical')
+
+    def escalate_alert(self, alert_id: str, severity: str = None,
+                       reason: str = '', user_id: str = '',
+                       notify: bool = True) -> Optional[Alert]:
+        """
+        Manually escalate an alert.
+
+        Distinct from _apply_escalation_rules, which applies *configured*
+        rules during alert creation. This bumps severity one step on the
+        ladder (or to an explicit level), records who/why in metadata, and
+        optionally re-notifies.
+
+        Args:
+            alert_id: Alert ID.
+            severity: Explicit target severity (None to bump one step).
+            reason: Free-text reason for the escalation.
+            user_id: Who escalated.
+            notify: Whether to send notifications about the escalation.
+
+        Returns:
+            The updated Alert, or None if the alert or severity is unknown.
+        """
+        if severity is not None and severity not in self._SEVERITY_LADDER:
+            return None
+
+        with self._lock:
+            alert = self._alerts.get(alert_id)
+            if not alert:
+                return None
+
+            if severity is None:
+                try:
+                    idx = self._SEVERITY_LADDER.index(alert.severity)
+                except ValueError:
+                    idx = 0
+                severity = self._SEVERITY_LADDER[min(idx + 1, len(self._SEVERITY_LADDER) - 1)]
+
+            alert.severity = severity
+            alert.updated_at = datetime.utcnow()
+            if 'escalated' not in alert.tags:
+                alert.tags.append('escalated')
+            alert.metadata['escalated_by'] = user_id
+            alert.metadata['escalated_at'] = datetime.utcnow().isoformat()
+            if reason:
+                alert.metadata['escalation_reason'] = reason
+
+        if notify:
+            self._send_notifications(alert)
+
+        return alert
+
+    def list_alerts(self, status: str = None, severity: str = None,
+                    limit: int = 100, offset: int = 0) -> List[Alert]:
+        """List alerts, optionally filtered. Thin wrapper over search_alerts."""
+        return self.search_alerts(severity=severity, status=status,
+                                  limit=limit, offset=offset)
+
     def acknowledge_alert(self, alert_id: str, user_id: str) -> bool:
         """
         Acknowledge an alert.

@@ -211,6 +211,21 @@ class UserAgentManager:
         for agent_data in default_agents:
             self._user_agents.append(UserAgent(**agent_data))
     
+    def list_user_agents(self, browser: str = None,
+                         device_type: str = None) -> List[str]:
+        """List user-agent strings, optionally filtered."""
+        return [ua.string for ua in self.list_user_agent_objects(browser, device_type)]
+
+    def list_user_agent_objects(self, browser: str = None,
+                                device_type: str = None) -> List["UserAgent"]:
+        """List UserAgent objects, optionally filtered."""
+        agents = list(self._user_agents)
+        if browser:
+            agents = [ua for ua in agents if ua.browser == browser]
+        if device_type:
+            agents = [ua for ua in agents if ua.device_type == device_type]
+        return agents
+
     def get_user_agent(self, browser: str = None, device_type: str = None) -> Optional[str]:
         """
         Get a user agent string.

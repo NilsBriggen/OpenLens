@@ -315,18 +315,21 @@ class ThreatMonitor:
                 }
             
             elif component == 'threat_analyzer' and self.threat_analyzer:
+                # get_stats() returns a plain dict here (unlike ioc_manager's
+                # IOCStats object) - attribute access made this component
+                # permanently report 'degraded'.
                 stats = self.threat_analyzer.get_stats()
                 status.status = 'healthy'
                 status.metrics = {
-                    'total_analyses': stats.total_analyses,
-                    'total_scores': stats.total_scores,
+                    'total_analyses': stats.get('total_analyses', 0),
+                    'total_scores': stats.get('total_scores', 0),
                 }
-            
+
             elif component == 'alert_manager' and self.alert_manager:
                 stats = self.alert_manager.get_stats()
                 status.status = 'healthy'
                 status.metrics = {
-                    'total_alerts': stats.total_alerts,
+                    'total_alerts': stats.get('total_alerts', 0),
                     'new_alerts': stats.get('by_status', {}).get('new', 0),
                 }
             
@@ -500,11 +503,48 @@ class ThreatMonitor:
                         'error': f"High disk usage: {latest_metrics.disk_usage:.1f}%",
                     })
             
+            # No samples means nothing was checked: 'healthy' here would be a
+            # false green. Report 'unknown' until monitoring has produced data.
+            has_data = bool(self._component_status_history or self._metrics_history)
+            if not has_data:
+                overall = 'unknown'
+            else:
+                overall = 'healthy' if all_healthy else 'degraded'
+
             return {
-                'status': 'healthy' if all_healthy else 'degraded',
+                'status': overall,
                 'issues': issues,
+                'monitoring_running': self._running,
+                'samples': len(self._metrics_history),
                 'timestamp': datetime.utcnow().isoformat(),
             }
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Aggregate monitor statistics: threats, alerts, component statuses,
+        performance, and monitoring loop state.
+        """
+        components: Dict[str, Any] = {}
+        with self._lock:
+            if self._component_status_history:
+                for name, status in self._component_status_history[-1].items():
+                    components[name] = status.to_dict() if hasattr(status, 'to_dict') else {
+                        'status': getattr(status, 'status', 'unknown'),
+                    }
+            samples = len(self._metrics_history)
+            running = self._running
+
+        return {
+            'threats': self.get_threat_summary(),
+            'alerts': self.get_alert_summary(),
+            'components': components,
+            'performance': self.get_performance_metrics(),
+            'monitoring': {
+                'running': running,
+                'samples': samples,
+                'interval': self.config.check_interval if hasattr(self.config, 'check_interval') else None,
+            },
+        }
     
     def get_performance_metrics(self) -> Dict[str, Any]:
         """

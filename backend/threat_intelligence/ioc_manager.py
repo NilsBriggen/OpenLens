@@ -170,14 +170,22 @@ class IOCManager:
         self._cleanup_thread = None
         self._running = False
     
-    def add_ioc(self, indicator: str, indicator_type: str, 
+    VALID_SEVERITIES = ('low', 'medium', 'high', 'critical')
+
+    def add_ioc(self, indicator: str, indicator_type: str, *,
                 threat_type: str = '', confidence: float = 0.8,
                 severity: str = 'medium', description: str = '',
-                reference: str = '', source: str = '', 
+                reference: str = '', source: str = '',
                 tags: List[str] = None, expires_in: int = None) -> IOC:
         """
         Add a new IOC.
-        
+
+        Everything after indicator_type is keyword-only: a caller once passed
+        confidence/severity positionally into the threat_type/confidence slots,
+        which stored corrupt IOCs without any error. The `*` turns that mistake
+        into a loud TypeError, and the validation below catches the same class
+        of shift arriving through dicts (e.g. bulk_add_iocs).
+
         Args:
             indicator: Indicator value.
             indicator_type: Type of indicator.
@@ -189,10 +197,22 @@ class IOCManager:
             source: Source of the IOC.
             tags: List of tags.
             expires_in: Expiration time in days (None for default).
-            
+
         Returns:
             IOC object.
+
+        Raises:
+            ValueError: If confidence is not a number in [0, 1] or severity is
+                not one of low/medium/high/critical.
         """
+        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) \
+                or not 0.0 <= float(confidence) <= 1.0:
+            raise ValueError(f"confidence must be a number in [0, 1], got {confidence!r}")
+        if severity not in self.VALID_SEVERITIES:
+            raise ValueError(
+                f"severity must be one of {self.VALID_SEVERITIES}, got {severity!r}")
+        confidence = float(confidence)
+
         ioc_id = hashlib.sha256(f"{indicator}:{indicator_type}:{source}".encode()).hexdigest()
         
         now = datetime.utcnow()
@@ -431,6 +451,40 @@ class IOCManager:
             
             return len(expired_ioc_ids)
     
+    def list_iocs(self, ioc_type: str = None, severity: str = None,
+                  limit: int = 100, offset: int = 0) -> List[IOC]:
+        """
+        List IOCs, optionally filtered. Thin wrapper over search_iocs.
+
+        Args:
+            ioc_type: Filter by indicator type.
+            severity: Filter by severity.
+            limit: Maximum number of results.
+            offset: Result offset for pagination.
+
+        Returns:
+            List of IOC objects.
+        """
+        return self.search_iocs(IOCSearchQuery(
+            indicator_type=ioc_type,
+            severity=severity,
+            limit=limit,
+            offset=offset,
+        ))
+
+    def find_correlations(self, ioc_id: str, threshold: float = None) -> List[Dict[str, Any]]:
+        """
+        Correlated IOCs for an IOC, serialised. Thin wrapper over correlate_iocs.
+
+        Args:
+            ioc_id: IOC ID.
+            threshold: Similarity threshold (None for config default).
+
+        Returns:
+            List of IOC dictionaries.
+        """
+        return [ioc.to_dict() for ioc in self.correlate_iocs(ioc_id, threshold)]
+
     def correlate_iocs(self, ioc_id: str, threshold: float = None) -> List[IOC]:
         """
         Find IOCs correlated with a given IOC.
@@ -466,8 +520,12 @@ class IOCManager:
             if other_ioc.ioc_id != ioc_id and other_ioc.source == ioc.source
         ]
         
-        # Combine and deduplicate
-        correlated_iocs = list(set(same_type_iocs + same_threat_iocs + same_source_iocs))
+        # Combine and deduplicate by id (IOC is a mutable dataclass and so is
+        # not hashable - set() on the objects raises TypeError).
+        _seen: Dict[str, Any] = {}
+        for candidate in same_type_iocs + same_threat_iocs + same_source_iocs:
+            _seen.setdefault(candidate.ioc_id, candidate)
+        correlated_iocs = list(_seen.values())
         
         # Calculate similarity scores and filter by threshold
         results = []

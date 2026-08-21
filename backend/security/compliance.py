@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from collections import defaultdict
 
+from backend.paths import resolve_dir
+
 
 @dataclass
 class ComplianceStandard:
@@ -170,7 +172,9 @@ class ComplianceReport:
 @dataclass
 class ComplianceConfig:
     """Configuration for compliance manager."""
-    report_dir: str = '/var/reports/openlens/compliance'
+    report_dir: str = field(
+        default_factory=lambda: resolve_dir('OPENLENS_REPORT_DIR', '/var/reports/openlens/compliance', 'compliance')
+    )
     assessment_interval: int = 30  # days
     auto_generate_reports: bool = True
     
@@ -920,7 +924,7 @@ class ComplianceManager:
             # Import config
             config_data = data.get('config', {})
             self.config = ComplianceConfig(
-                report_dir=config_data.get('report_dir', '/var/reports/openlens/compliance'),
+                report_dir=config_data.get('report_dir', resolve_dir('OPENLENS_REPORT_DIR', '/var/reports/openlens/compliance', 'compliance')),
                 assessment_interval=config_data.get('assessment_interval', 30),
                 auto_generate_reports=config_data.get('auto_generate_reports', True),
             )

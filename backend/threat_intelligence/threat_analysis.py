@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+from .ioc_manager import IOC
+
 
 @dataclass
 class ThreatAnalysis:
@@ -671,6 +673,35 @@ class ThreatAnalyzer:
                 return [a for a in self._analyses.values() if a.ioc_id == ioc_id][:limit]
             return list(self._analyses.values())[:limit]
     
+    def calculate_threat_scores(self, ioc_ids: List[str] = None,
+                                limit: int = 100) -> Dict[str, Dict[str, Any]]:
+        """
+        Batch threat scores, keyed by ioc_id.
+
+        Args:
+            ioc_ids: Explicit IOC ids (None to score every stored IOC).
+            limit: Cap on how many IOCs are scored, so this cannot become an
+                unbounded O(n) endpoint.
+
+        Returns:
+            {ioc_id: ThreatScore.to_dict()} for each scored IOC.
+        """
+        if not self.ioc_manager:
+            return {}
+
+        if ioc_ids:
+            iocs = [self.ioc_manager.get_ioc_by_id(i) for i in ioc_ids]
+            iocs = [ioc for ioc in iocs if ioc]
+        else:
+            iocs = self.ioc_manager.search_iocs()
+
+        scores: Dict[str, Dict[str, Any]] = {}
+        for ioc in iocs[:max(0, limit)]:
+            score = self.calculate_threat_score(ioc)
+            if score:
+                scores[ioc.ioc_id] = score.to_dict()
+        return scores
+
     def get_threat_score(self, ioc_id: str) -> Optional[ThreatScore]:
         """
         Get a threat score.

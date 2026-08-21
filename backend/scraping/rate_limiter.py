@@ -44,13 +44,19 @@ class RateLimitStatus:
     allowed: bool
     remaining: int
     reset_time: float
-    
+
+    @property
+    def reset_in(self) -> float:
+        """Seconds until reset - derived, since reset_time is an absolute epoch."""
+        return max(0.0, self.reset_time - time.time())
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
             'allowed': self.allowed,
             'remaining': self.remaining,
             'reset_time': self.reset_time,
+            'reset_in': self.reset_in,
         }
 
 

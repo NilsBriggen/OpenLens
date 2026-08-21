@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from urllib.parse import urlparse
 
+from backend.paths import resolve_dir
+
 
 @dataclass
 class ThreatFeed:
@@ -97,7 +99,9 @@ class ThreatFeedItem:
 @dataclass
 class ThreatFeedConfig:
     """Configuration for threat feed manager."""
-    feed_dir: str = '/var/data/openlens/feeds'
+    feed_dir: str = field(
+        default_factory=lambda: resolve_dir('OPENLENS_FEED_DIR', '/var/data/openlens/feeds', 'feeds')
+    )
     update_interval: int = 3600  # seconds
     max_items_per_feed: int = 100000
     max_age: int = 30  # days
@@ -243,6 +247,34 @@ class ThreatFeedManager:
         for feed in default_feeds:
             self._feeds[feed.feed_id] = feed
     
+    def create_feed(self, name: str, url: str, feed_type: str = 'ioc',
+                    enabled: bool = True, description: str = '',
+                    format: str = 'csv', update_interval: int = 3600,
+                    **auth_kwargs) -> Optional[ThreatFeed]:
+        """
+        Construct and register a feed from scalars (add_feed takes an object).
+
+        Returns:
+            The created ThreatFeed, or None when a feed with the same id
+            already exists.
+        """
+        feed_id = hashlib.sha256(f'{name}:{url}'.encode()).hexdigest()[:16]
+        feed = ThreatFeed(
+            feed_id=feed_id,
+            name=name,
+            description=description,
+            url=url,
+            feed_type=feed_type,
+            format=format,
+            update_interval=update_interval,
+            is_active=enabled,
+            requires_auth=bool(auth_kwargs.get('auth_username') or auth_kwargs.get('auth_token')),
+            auth_username=auth_kwargs.get('auth_username', ''),
+            auth_password=auth_kwargs.get('auth_password', ''),
+            auth_token=auth_kwargs.get('auth_token', ''),
+        )
+        return feed if self.add_feed(feed) else None
+
     def add_feed(self, feed: ThreatFeed) -> bool:
         """
         Add a threat feed.
@@ -913,7 +945,7 @@ class ThreatFeedManager:
             # Import config
             config_data = data.get('config', {})
             self.config = ThreatFeedConfig(
-                feed_dir=config_data.get('feed_dir', '/var/data/openlens/feeds'),
+                feed_dir=config_data.get('feed_dir', resolve_dir('OPENLENS_FEED_DIR', '/var/data/openlens/feeds', 'feeds')),
                 update_interval=config_data.get('update_interval', 3600),
                 max_items_per_feed=config_data.get('max_items_per_feed', 100000),
                 max_age=config_data.get('max_age', 30),

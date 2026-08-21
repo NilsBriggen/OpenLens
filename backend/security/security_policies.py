@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from collections import defaultdict
 
+from backend.paths import resolve_dir
+
 
 @dataclass
 class SecurityPolicy:
@@ -145,7 +147,9 @@ class PolicyEvaluationResult:
 @dataclass
 class SecurityPolicyConfig:
     """Configuration for security policy manager."""
-    policy_dir: str = '/etc/openlens/policies'
+    policy_dir: str = field(
+        default_factory=lambda: resolve_dir('OPENLENS_POLICY_DIR', '/etc/openlens/policies', 'policies')
+    )
     auto_reload: bool = True
     reload_interval: int = 300  # seconds
     
@@ -609,7 +613,7 @@ class SecurityPolicyManager:
             # Import config
             config_data = data.get('config', {})
             self.config = SecurityPolicyConfig(
-                policy_dir=config_data.get('policy_dir', '/etc/openlens/policies'),
+                policy_dir=config_data.get('policy_dir', resolve_dir('OPENLENS_POLICY_DIR', '/etc/openlens/policies', 'policies')),
                 auto_reload=config_data.get('auto_reload', True),
                 reload_interval=config_data.get('reload_interval', 300),
             )

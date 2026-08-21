@@ -8,7 +8,7 @@ Provides AI-powered insights and anomaly detection:
 - Similarity matching
 - Clustering
 - Graph-based ML
-- Threat intelligence
+- Threat intelligence facade
 """
 
 from .anomaly_detection import AnomalyDetector, anomaly_detector

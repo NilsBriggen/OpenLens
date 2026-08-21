@@ -21,6 +21,8 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from enum import Enum
 
+from backend.paths import resolve_file
+
 
 class AuditEventType(Enum):
     """Types of audit events."""
@@ -110,10 +112,15 @@ class AuditQuery:
         }
 
 
+def _default_audit_log_path() -> str:
+    """Location of the audit log. Override with OPENLENS_AUDIT_LOG."""
+    return resolve_file('OPENLENS_AUDIT_LOG', '/var/log/openlens/audit.log', 'audit.log')
+
+
 @dataclass
 class AuditConfig:
     """Configuration for audit logging."""
-    log_file: str = '/var/log/openlens/audit.log'
+    log_file: str = field(default_factory=_default_audit_log_path)
     max_file_size: int = 100 * 1024 * 1024  # 100MB
     max_files: int = 10
     log_level: str = 'INFO'
@@ -160,7 +167,8 @@ class AuditLogger:
         self._events: List[AuditEvent] = []
         self._lock = threading.Lock()
         self._event_counter = 0
-        
+        self._file_logging_error: Optional[OSError] = None
+
         # Set up logging
         self._setup_logging()
     
@@ -179,21 +187,34 @@ class AuditLogger:
             console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
             self._logger.addHandler(console_handler)
         
-        # File handler
+        # File handler. An unwritable log destination must not take the whole
+        # process down at import time, so fall back to console-only and say so.
         if self.config.enable_file:
-            # Create log directory if it doesn't exist
-            log_dir = os.path.dirname(self.config.log_file)
-            if log_dir and not os.path.exists(log_dir):
-                os.makedirs(log_dir, exist_ok=True)
-            
-            file_handler = logging.handlers.RotatingFileHandler(
-                self.config.log_file,
-                maxBytes=self.config.max_file_size,
-                backupCount=self.config.max_files,
-            )
-            file_handler.setLevel(getattr(logging, self.config.log_level.upper(), logging.INFO))
-            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-            self._logger.addHandler(file_handler)
+            try:
+                # Create log directory if it doesn't exist
+                log_dir = os.path.dirname(self.config.log_file)
+                if log_dir and not os.path.exists(log_dir):
+                    os.makedirs(log_dir, exist_ok=True)
+
+                file_handler = logging.handlers.RotatingFileHandler(
+                    self.config.log_file,
+                    maxBytes=self.config.max_file_size,
+                    backupCount=self.config.max_files,
+                )
+            except OSError as exc:
+                self._file_logging_error = exc
+                logging.getLogger(__name__).warning(
+                    'Audit file logging disabled, cannot write to %s (%s). '
+                    'Set OPENLENS_AUDIT_LOG to a writable path to enable it.',
+                    self.config.log_file,
+                    exc,
+                )
+                if not self._logger.handlers:
+                    self._logger.addHandler(logging.StreamHandler())
+            else:
+                file_handler.setLevel(getattr(logging, self.config.log_level.upper(), logging.INFO))
+                file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+                self._logger.addHandler(file_handler)
     
     def log(self, event_type: str, severity: str = 'info', 
             user_id: str = '', username: str = '', resource: str = '',
