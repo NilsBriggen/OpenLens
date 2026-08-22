@@ -53,6 +53,10 @@ interface GraphVisualizationProps {
   onEdgeClick?: (edge: EdgeData) => void;
   onReady?: (cy: any) => void;
   style?: React.CSSProperties;
+  /** Set false when an embedding page renders its own legend. */
+  showLegend?: boolean;
+  /** Set false when an embedding page renders its own title/layout-select/zoom toolbar. */
+  showToolbar?: boolean;
 }
 
 const GraphVisualization: React.FC<GraphVisualizationProps> = ({
@@ -63,6 +67,8 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
   onEdgeClick,
   onReady,
   style = {},
+  showLegend = true,
+  showToolbar = true,
 }) => {
   const [cy, setCy] = useState<any>(null);
   const [zoom, setZoom] = useState(1);
@@ -268,6 +274,7 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
       style={style}
     >
       {/* Stats Bar */}
+      {showToolbar && (
       <Card size="small" style={{ marginBottom: 16 }}>
         <Row gutter={24}>
           <Col span={6}>
@@ -297,62 +304,29 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
           </Col>
         </Row>
       </Card>
+      )}
 
       {/* Graph Container */}
-      <Card
-        title={
-          <Space>
-            <ProjectOutlined />
-            Graph Visualization
-          </Space>
-        }
-        extra={
-          <Space>
-            <Select
-              value={layout}
-              onChange={handleLayoutChange}
-              options={layoutOptions}
-              size="small"
-              style={{ width: 120 }}
-            />
-            <Tooltip title="Zoom In">
-              <Button icon={<ZoomInOutlined />} onClick={zoomIn} size="small" />
-            </Tooltip>
-            <Tooltip title="Zoom Out">
-              <Button icon={<ZoomOutOutlined />} onClick={zoomOut} size="small" />
-            </Tooltip>
-            <Tooltip title="Reset Zoom">
-              <Button icon={<SyncOutlined />} onClick={resetZoom} size="small" />
-            </Tooltip>
-            <Tooltip title={fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}>
-              <Button
-                icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-                onClick={() => setFullscreen(!fullscreen)}
-                size="small"
-              />
-            </Tooltip>
-            <Tooltip title="Settings">
-              <Button icon={<SettingOutlined />} size="small" />
-            </Tooltip>
-          </Space>
-        }
-        style={{ marginBottom: 16 }}
-      >
-        {loading ? (
+      {(() => {
+        const canvas = loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}>
             <Spin size="large" />
             <Text type="secondary" style={{ marginLeft: 16 }}>Loading graph...</Text>
           </div>
         ) : (
           <div
-            style={{
-              height: fullscreen ? 'calc(100vh - 200px)' : height,
-              width: '100%',
-              border: '1px solid #f0f0f0',
-              borderRadius: 8,
-              overflow: 'hidden',
-              background: 'var(--bg-color-secondary)',
-            }}
+            style={
+              showToolbar
+                ? {
+                    height: fullscreen ? 'calc(100vh - 200px)' : height,
+                    width: '100%',
+                    border: '1px solid #f0f0f0',
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                    background: 'var(--bg-color-secondary)',
+                  }
+                : { height: '100%', width: '100%' }
+            }
           >
             <CytoscapeComponent
               elements={CytoscapeComponent.normalizeElements(preparedData)}
@@ -369,8 +343,56 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
               layout={cyConfig.layout}
             />
           </div>
-        )}
-      </Card>
+        );
+
+        if (!showToolbar) {
+          return <div style={{ height, width: '100%' }}>{canvas}</div>;
+        }
+
+        return (
+          <Card
+            title={
+              <Space>
+                <ProjectOutlined />
+                Graph Visualization
+              </Space>
+            }
+            extra={
+              <Space>
+                <Select
+                  value={layout}
+                  onChange={handleLayoutChange}
+                  options={layoutOptions}
+                  size="small"
+                  style={{ width: 120 }}
+                />
+                <Tooltip title="Zoom In">
+                  <Button icon={<ZoomInOutlined />} onClick={zoomIn} size="small" />
+                </Tooltip>
+                <Tooltip title="Zoom Out">
+                  <Button icon={<ZoomOutOutlined />} onClick={zoomOut} size="small" />
+                </Tooltip>
+                <Tooltip title="Reset Zoom">
+                  <Button icon={<SyncOutlined />} onClick={resetZoom} size="small" />
+                </Tooltip>
+                <Tooltip title={fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}>
+                  <Button
+                    icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                    onClick={() => setFullscreen(!fullscreen)}
+                    size="small"
+                  />
+                </Tooltip>
+                <Tooltip title="Settings">
+                  <Button icon={<SettingOutlined />} size="small" />
+                </Tooltip>
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            {canvas}
+          </Card>
+        );
+      })()}
 
       {/* Selection Details */}
       {(selectedNode || selectedEdge) && (
@@ -462,48 +484,50 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
       )}
 
       {/* Legend */}
-      <Card size="small" style={{ marginTop: 16 }}>
-        <Title level={5} style={{ margin: 0, marginBottom: 12 }}>
-          Legend
-        </Title>
-        <Row gutter={24}>
-          <Col span={12}>
-            <Text strong style={{ marginBottom: 8, display: 'block' }}>Node Types:</Text>
-            <Space wrap>
-              {nodeTypes.map(type => (
-                <Space key={type}>
-                  <div
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: getNodeShape(type) === 'rectangle' ? 4 : '50%',
-                      background: getNodeColor(type),
-                    }}
-                  />
-                  <Text style={{ fontSize: 12 }}>{type}</Text>
-                </Space>
-              ))}
-            </Space>
-          </Col>
-          <Col span={12}>
-            <Text strong style={{ marginBottom: 8, display: 'block' }}>Edge Types:</Text>
-            <Space wrap>
-              {edgeTypes.map(type => (
-                <Space key={type}>
-                  <div
-                    style={{
-                      width: 30,
-                      height: 2,
-                      background: getEdgeColor(type),
-                    }}
-                  />
-                  <Text style={{ fontSize: 12 }}>{type}</Text>
-                </Space>
-              ))}
-            </Space>
-          </Col>
-        </Row>
-      </Card>
+      {showLegend && (
+        <Card size="small" style={{ marginTop: 16 }}>
+          <Title level={5} style={{ margin: 0, marginBottom: 12 }}>
+            Legend
+          </Title>
+          <Row gutter={24}>
+            <Col span={12}>
+              <Text strong style={{ marginBottom: 8, display: 'block' }}>Node Types:</Text>
+              <Space wrap>
+                {nodeTypes.map(type => (
+                  <Space key={type}>
+                    <div
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: getNodeShape(type) === 'rectangle' ? 4 : '50%',
+                        background: getNodeColor(type),
+                      }}
+                    />
+                    <Text style={{ fontSize: 12 }}>{type}</Text>
+                  </Space>
+                ))}
+              </Space>
+            </Col>
+            <Col span={12}>
+              <Text strong style={{ marginBottom: 8, display: 'block' }}>Edge Types:</Text>
+              <Space wrap>
+                {edgeTypes.map(type => (
+                  <Space key={type}>
+                    <div
+                      style={{
+                        width: 30,
+                        height: 2,
+                        background: getEdgeColor(type),
+                      }}
+                    />
+                    <Text style={{ fontSize: 12 }}>{type}</Text>
+                  </Space>
+                ))}
+              </Space>
+            </Col>
+          </Row>
+        </Card>
+      )}
     </motion.div>
   );
 };

@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
-import { Card, Tabs, Button, Space, Typography, Row, Col, Divider, Modal, Form, Input, Select, Table, Tag, Progress, Alert, Spin, Avatar, List, Tooltip, Statistic } from 'antd';
-import { SafetyCertificateOutlined, UserOutlined, TeamOutlined, SafetyOutlined, KeyOutlined, AuditOutlined, LockOutlined, UnlockOutlined, SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FilterOutlined, ExportOutlined, ImportOutlined, SettingOutlined, SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, WarningOutlined, GlobalOutlined, CodeOutlined } from '@ant-design/icons';
+import { Card, Button, Space, Typography, Row, Col, Divider, Modal, Form, Input, Select, Table, Tag, Alert, Tooltip } from 'antd';
+import { SafetyCertificateOutlined, UserOutlined, TeamOutlined, SafetyOutlined, KeyOutlined, AuditOutlined, LockOutlined, UnlockOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ExportOutlined, SettingOutlined, SyncOutlined, CodeOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { Line, Bar as BarBase, Pie } from '@ant-design/plots';
-// The compliance chart passes v1-runtime props the TS config omits.
-const Bar = BarBase as unknown as React.ComponentType<any>;
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Pie } from '@ant-design/plots';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useUsers, useRoles, usePermissions, useAuditLogs,
-  useCreateUser, useCreateRole, useCreatePermission,
+  useCreateUser, useCreateRole, useCreatePermission, useLocalStorage,
 } from '../hooks/useApi';
+import StatCard from '../components/common/StatCard';
+import PageHeader from '../components/common/PageHeader';
+import BarList from '../components/common/BarList';
+import TabEmptyState from '../components/common/TabEmptyState';
 
-const { Title, Text, Paragraph } = Typography;
-const { TabPane } = Tabs;
-const { Option } = Select;
+const { Title, Text } = Typography;
 const { Search } = Input;
 
 
@@ -27,16 +27,8 @@ const mockEncryptionStats = {
   lastRotation: '2024-01-01T00:00:00Z',
 };
 
-const mockComplianceStats = {
-  totalChecks: 45,
-  passedChecks: 42,
-  failedChecks: 3,
-  complianceRate: 0.93,
-  lastAudit: '2024-01-10T00:00:00Z',
-};
-
 const SecurityCenter: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('users');
+  const { value: activeTab, setValue: setActiveTab } = useLocalStorage('security-active-tab', 'users');
   const [userFormVisible, setUserFormVisible] = useState(false);
   const [roleFormVisible, setRoleFormVisible] = useState(false);
   const [permissionFormVisible, setPermissionFormVisible] = useState(false);
@@ -109,9 +101,18 @@ const SecurityCenter: React.FC = () => {
     switch (status) {
       case 'active': return <Tag color="success">Active</Tag>;
       case 'inactive': return <Tag color="warning">Inactive</Tag>;
-      case 'locked': return <Tag color="error">Locked</Tag>;
+      case 'locked': return <Tag color="warning">Locked</Tag>;
       default: return <Tag>Unknown</Tag>;
     }
+  };
+
+  // Get role tag color by privilege level
+  const getRoleTagColor = (role: string) => {
+    const normalized = role.toLowerCase();
+    if (normalized.includes('admin')) return 'error';
+    if (normalized.includes('investigat')) return 'success';
+    if (normalized.includes('analyst')) return 'blue';
+    return 'default';
   };
 
   // Get severity color
@@ -133,7 +134,7 @@ const SecurityCenter: React.FC = () => {
       case 'high': return <Tag color="warning">High</Tag>;
       case 'medium': return <Tag color="warning">Medium</Tag>;
       case 'low': return <Tag color="success">Low</Tag>;
-      case 'info': return <Tag color="info">Info</Tag>;
+      case 'info': return <Tag color="success">Info</Tag>;
       default: return <Tag>Unknown</Tag>;
     }
   };
@@ -145,6 +146,7 @@ const SecurityCenter: React.FC = () => {
       dataIndex: 'id',
       key: 'id',
       width: 100,
+      render: (id: string) => <span className="ol-mono">{id}</span>,
     },
     {
       title: 'Username',
@@ -169,7 +171,7 @@ const SecurityCenter: React.FC = () => {
       dataIndex: 'role',
       key: 'role',
       width: 150,
-      render: (role: string) => <Tag color="blue">{role}</Tag>,
+      render: (role: string) => <Tag color={getRoleTagColor(role)}>{role}</Tag>,
     },
     {
       title: 'Status',
@@ -226,6 +228,7 @@ const SecurityCenter: React.FC = () => {
       dataIndex: 'id',
       key: 'id',
       width: 100,
+      render: (id: string) => <span className="ol-mono">{id}</span>,
     },
     {
       title: 'Name',
@@ -285,12 +288,14 @@ const SecurityCenter: React.FC = () => {
       dataIndex: 'id',
       key: 'id',
       width: 100,
+      render: (id: string) => <span className="ol-mono">{id}</span>,
     },
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
       width: 200,
+      render: (name: string) => <span className="ol-mono">{name}</span>,
     },
     {
       title: 'Description',
@@ -432,39 +437,39 @@ const SecurityCenter: React.FC = () => {
     return true;
   });
 
-  // User stats chart
-  const userStatsConfig = {
-    data: [
-      { role: 'Administrator', count: users.filter(u => u.role === 'Administrator').length },
-      { role: 'Analyst', count: users.filter(u => u.role === 'Analyst').length },
-      { role: 'Viewer', count: users.filter(u => u.role === 'Viewer').length },
-      { role: 'Scraper', count: users.filter(u => u.role === 'Scraper').length },
-    ],
-    xField: 'role',
-    yField: 'count',
-    colorField: 'role',
-    color: ['#f5222d', '#1890ff', '#52c41a', '#faad14'],
-    label: {
-      position: 'top' as const,
-    },
+  // Users by Role - bar list items. Buckets by whichever role strings the
+  // users actually carry, rather than assumed display names that never
+  // matched the real (lowercase) role values and left every bucket at 0.
+  const roleTagToColorVar: Record<string, string> = {
+    error: 'var(--error-color)',
+    success: 'var(--success-color)',
+    blue: 'var(--primary-color)',
+    default: 'var(--text-color-secondary)',
   };
+  const usersByRoleItems = Array.from(new Set(users.map((u) => u.role)))
+    .sort()
+    .map((role) => ({
+      key: role,
+      label: role.charAt(0).toUpperCase() + role.slice(1),
+      value: users.filter((u) => u.role === role).length,
+      color: roleTagToColorVar[getRoleTagColor(role)] ?? roleTagToColorVar.default,
+    }));
 
-  // Audit log chart
-  const auditLogChartConfig = {
-    data: [
-      { type: 'authentication', count: auditLogs.filter(l => l.eventType === 'authentication').length },
-      { type: 'data', count: auditLogs.filter(l => l.eventType === 'data').length },
-      { type: 'configuration', count: auditLogs.filter(l => l.eventType === 'configuration').length },
-      { type: 'security', count: auditLogs.filter(l => l.eventType === 'security').length },
-    ],
-    xField: 'type',
-    yField: 'count',
-    seriesField: 'type',
-    color: ['#1890ff', '#52c41a', '#faad14', '#f5222d'],
-    label: {
-      position: 'top' as const,
-    },
-  };
+  // Events by Type - bar list items. Buckets by whichever event_type strings
+  // the backend actually emits (authorization, data_access, ...) rather than
+  // an assumed taxonomy that never matched and left every bucket at 0.
+  const eventTypeColorPalette = [
+    'var(--primary-color)', 'var(--success-color)', 'var(--warning-color)',
+    'var(--error-color)', 'var(--purple-color)', 'var(--text-color-secondary)',
+  ];
+  const auditEventsByTypeItems = Array.from(new Set(auditLogs.map((l) => l.eventType || 'unknown')))
+    .sort()
+    .map((eventType, index) => ({
+      key: eventType,
+      label: eventType.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      value: auditLogs.filter((l) => (l.eventType || 'unknown') === eventType).length,
+      color: eventTypeColorPalette[index % eventTypeColorPalette.length],
+    }));
 
   // Severity chart
   const severityChartConfig = {
@@ -487,33 +492,28 @@ const SecurityCenter: React.FC = () => {
   };
 
   return (
-    <div className="security-center-page">
+    <div className="security-center-page ol-page-body">
       {/* Page Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="page-header"
       >
-        <div>
-          <Title level={1}>
+        <PageHeader
+          icon={<SafetyCertificateOutlined />}
+          title="Security Center"
+          subtitle="Enterprise-grade security and access control"
+          actions={
             <Space>
-              <SafetyCertificateOutlined />
-              Security Center
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setUserFormVisible(true)}>
+                New User
+              </Button>
+              <Button icon={<ExportOutlined />}>
+                Export Audit
+              </Button>
             </Space>
-          </Title>
-          <Paragraph type="secondary">
-            Enterprise-grade security and access control
-          </Paragraph>
-        </div>
-        <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setUserFormVisible(true)}>
-            New User
-          </Button>
-          <Button icon={<SyncOutlined />} onClick={() => window.location.reload()}>
-            Refresh
-          </Button>
-        </Space>
+          }
+        />
       </motion.div>
 
       {/* Quick Stats */}
@@ -522,47 +522,33 @@ const SecurityCenter: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
       >
-        <Row gutter={24}>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Total Users"
-                value={users.length}
-                prefix={<UserOutlined style={{ color: '#1890ff' }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Total Roles"
-                value={roles.length}
-                prefix={<TeamOutlined style={{ color: '#52c41a' }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Total Permissions"
-                value={permissions.length}
-                prefix={<SafetyOutlined style={{ color: '#faad14' }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Audit Logs"
-                value={auditLogs.length}
-                prefix={<AuditOutlined style={{ color: '#722ed1' }} />}
-              />
-            </Card>
-          </Col>
-        </Row>
+        <div className="ol-stats-grid">
+          <StatCard
+            label="Total Users"
+            value={users.length}
+            icon={<UserOutlined />}
+            accent="primary"
+          />
+          <StatCard
+            label="Total Roles"
+            value={roles.length}
+            icon={<TeamOutlined />}
+            accent="success"
+          />
+          <StatCard
+            label="Total Permissions"
+            value={permissions.length}
+            icon={<SafetyOutlined />}
+            accent="warning"
+          />
+          <StatCard
+            label="Audit Logs"
+            value={auditLogs.length}
+            icon={<AuditOutlined />}
+            accent="purple"
+          />
+        </div>
       </motion.div>
-
-      <Divider />
 
       {/* Main Tabs */}
       <motion.div
@@ -623,7 +609,7 @@ const SecurityCenter: React.FC = () => {
 
               {/* User Stats Chart */}
               <Card title="Users by Role" style={{ marginBottom: 24 }}>
-                <Bar {...userStatsConfig} height={200} />
+                <BarList items={usersByRoleItems} />
               </Card>
 
               {/* Users Table */}
@@ -633,7 +619,7 @@ const SecurityCenter: React.FC = () => {
                   dataSource={users}
                   rowKey="id"
                   size="small"
-                  scroll={{ x: 1400 }}
+                  scroll={{ x: 1360 }}
                 />
               </Card>
 
@@ -768,7 +754,7 @@ const SecurityCenter: React.FC = () => {
                   dataSource={roles}
                   rowKey="id"
                   size="small"
-                  scroll={{ x: 1200 }}
+                  scroll={{ x: 1000 }}
                 />
               </Card>
 
@@ -864,7 +850,7 @@ const SecurityCenter: React.FC = () => {
                   dataSource={permissions}
                   rowKey="id"
                   size="small"
-                  scroll={{ x: 1000 }}
+                  scroll={{ x: 820 }}
                 />
               </Card>
 
@@ -931,18 +917,33 @@ const SecurityCenter: React.FC = () => {
               </Card>
 
               {/* Audit Log Stats */}
-              <Row gutter={24} style={{ marginBottom: 24 }}>
-                <Col xs={24} lg={12}>
-                  <Card title="Events by Type">
-                    <Bar {...auditLogChartConfig} height={200} />
-                  </Card>
-                </Col>
-                <Col xs={24} lg={12}>
-                  <Card title="Events by Severity">
-                    <Pie {...severityChartConfig} height={200} />
-                  </Card>
-                </Col>
-              </Row>
+              <div className="ol-row-2up" style={{ marginBottom: 24 }}>
+                <Card title="Events by Type">
+                  <BarList items={auditEventsByTypeItems} />
+                </Card>
+                <Card title="Events by Severity">
+                  <Pie {...severityChartConfig} height={200} />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
+                    {severityChartConfig.data.map((d, index) => (
+                      <span
+                        key={d.severity}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-color-secondary)' }}
+                      >
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            background: severityChartConfig.color[index],
+                            display: 'inline-block',
+                          }}
+                        />
+                        {d.severity} ({d.count})
+                      </span>
+                    ))}
+                  </div>
+                </Card>
+              </div>
 
               {/* Audit Logs Table */}
               <Card title="Audit Logs">
@@ -951,7 +952,7 @@ const SecurityCenter: React.FC = () => {
                   dataSource={filteredAuditLogs}
                   rowKey="id"
                   size="small"
-                  scroll={{ x: 1400 }}
+                  scroll={{ x: 1100 }}
                 />
               </Card>
             </div>
@@ -964,486 +965,139 @@ const SecurityCenter: React.FC = () => {
               description="Encryption metrics are illustrative - no backend endpoint provides them yet." />
             <div>
               <Title level={4} style={{ marginBottom: 24 }}>Encryption</Title>
-              
+
               {/* Stats */}
-              <Row gutter={24} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Total Encrypted"
-                      value={mockEncryptionStats.totalEncrypted.toLocaleString()}
-                      prefix={<LockOutlined style={{ color: '#1890ff' }} />}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Total Decrypted"
-                      value={mockEncryptionStats.totalDecrypted.toLocaleString()}
-                      prefix={<UnlockOutlined style={{ color: '#52c41a' }} />}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Key Strength"
-                      value={mockEncryptionStats.keyStrength}
-                      prefix={<KeyOutlined style={{ color: '#faad14' }} />}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Algorithms"
-                      value={mockEncryptionStats.algorithms.length}
-                      prefix={<CodeOutlined style={{ color: '#722ed1' }} />}
-                    />
-                  </Card>
-                </Col>
-              </Row>
+              <div className="ol-row-quarter" style={{ marginBottom: 24 }}>
+                <Card bodyStyle={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-color-tertiary)' }}>Total Encrypted</span>
+                    <LockOutlined style={{ color: 'var(--primary-color)', fontSize: 16 }} />
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 600, marginTop: 8, color: 'var(--text-color)' }}>
+                    {mockEncryptionStats.totalEncrypted.toLocaleString()}
+                  </div>
+                </Card>
+                <Card bodyStyle={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-color-tertiary)' }}>Total Decrypted</span>
+                    <UnlockOutlined style={{ color: 'var(--success-color)', fontSize: 16 }} />
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 600, marginTop: 8, color: 'var(--text-color)' }}>
+                    {mockEncryptionStats.totalDecrypted.toLocaleString()}
+                  </div>
+                </Card>
+                <Card bodyStyle={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-color-tertiary)' }}>Key Strength</span>
+                    <KeyOutlined style={{ color: 'var(--warning-color)', fontSize: 16 }} />
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 600, marginTop: 8, color: 'var(--text-color)' }}>
+                    {mockEncryptionStats.keyStrength}
+                  </div>
+                </Card>
+                <Card bodyStyle={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-color-tertiary)' }}>Algorithms</span>
+                    <CodeOutlined style={{ color: 'var(--purple-color)', fontSize: 16 }} />
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 600, marginTop: 8, color: 'var(--text-color)' }}>
+                    {mockEncryptionStats.algorithms.length}
+                  </div>
+                </Card>
+              </div>
 
               {/* Encryption Info */}
-              <Row gutter={24}>
-                <Col xs={24} lg={12}>
-                  <Card title="Encryption Algorithms">
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      {mockEncryptionStats.algorithms.map(alg => (
-                        <Tag key={alg} color="blue" style={{ padding: '8px 16px', fontSize: 14 }}>
-                          {alg}
-                        </Tag>
-                      ))}
-                    </Space>
-                  </Card>
-                </Col>
-                <Col xs={24} lg={12}>
-                  <Card title="Key Management">
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Text>Last Rotation:</Text>
-                        <Text strong>{mockEncryptionStats.lastRotation}</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Text>Rotation Interval:</Text>
-                        <Text strong>30 days</Text>
-                      </div>
-                    </Space>
-                    <Divider />
-                    <Space>
-                      <Button type="primary" icon={<SyncOutlined />}>
-                        Rotate Keys
-                      </Button>
-                      <Button icon={<SettingOutlined />}>
-                        Configure
-                      </Button>
-                    </Space>
-                  </Card>
-                </Col>
-              </Row>
+              <div className="ol-row-2up">
+                <Card title="Encryption Algorithms">
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {mockEncryptionStats.algorithms.map(alg => (
+                      <Tag key={alg} color="blue" style={{ padding: '8px 16px', fontSize: 14 }}>
+                        {alg}
+                      </Tag>
+                    ))}
+                  </Space>
+                </Card>
+                <Card title="Key Management">
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text>Last Rotation:</Text>
+                      <Text strong>{mockEncryptionStats.lastRotation}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text>Rotation Interval:</Text>
+                      <Text strong>30 days</Text>
+                    </div>
+                  </Space>
+                  <Divider />
+                  <Space>
+                    <Button type="primary" icon={<SyncOutlined />}>
+                      Rotate Keys
+                    </Button>
+                    <Button icon={<SettingOutlined />}>
+                      Configure
+                    </Button>
+                  </Space>
+                </Card>
+              </div>
 
               {/* Encryption Tools */}
               <Card title="Encryption Tools" style={{ marginTop: 24 }}>
-                <Row gutter={24}>
-                  <Col xs={24} lg={12}>
-                    <Card title="Encrypt Data" size="small">
-                      <Form layout="vertical">
-                        <Form.Item label="Data to Encrypt">
-                          <Input.TextArea rows={4} placeholder="Enter text to encrypt" />
-                        </Form.Item>
-                        <Form.Item label="Algorithm">
-                          <Select options={mockEncryptionStats.algorithms.map(alg => ({ label: alg, value: alg }))} />
-                        </Form.Item>
-                        <Form.Item>
-                          <Button type="primary" block icon={<LockOutlined />}>
-                            Encrypt
-                          </Button>
-                        </Form.Item>
-                      </Form>
-                    </Card>
-                  </Col>
-                  <Col xs={24} lg={12}>
-                    <Card title="Decrypt Data" size="small">
-                      <Form layout="vertical">
-                        <Form.Item label="Data to Decrypt">
-                          <Input.TextArea rows={4} placeholder="Enter encrypted text" />
-                        </Form.Item>
-                        <Form.Item label="Algorithm">
-                          <Select options={mockEncryptionStats.algorithms.map(alg => ({ label: alg, value: alg }))} />
-                        </Form.Item>
-                        <Form.Item>
-                          <Button type="primary" block icon={<UnlockOutlined />}>
-                            Decrypt
-                          </Button>
-                        </Form.Item>
-                      </Form>
-                    </Card>
-                  </Col>
-                </Row>
+                <div className="ol-row-2up">
+                  <Card title="Encrypt Data" size="small" className="ol-subcard">
+                    <Form layout="vertical">
+                      <Form.Item label="Data to Encrypt">
+                        <Input.TextArea rows={4} placeholder="Enter text to encrypt" />
+                      </Form.Item>
+                      <Form.Item label="Algorithm">
+                        <Select options={mockEncryptionStats.algorithms.map(alg => ({ label: alg, value: alg }))} />
+                      </Form.Item>
+                      <Form.Item>
+                        <Button type="primary" block icon={<LockOutlined />}>
+                          Encrypt
+                        </Button>
+                      </Form.Item>
+                    </Form>
+                  </Card>
+                  <Card title="Decrypt Data" size="small" className="ol-subcard">
+                    <Form layout="vertical">
+                      <Form.Item label="Data to Decrypt">
+                        <Input.TextArea rows={4} placeholder="Enter encrypted text" />
+                      </Form.Item>
+                      <Form.Item label="Algorithm">
+                        <Select options={mockEncryptionStats.algorithms.map(alg => ({ label: alg, value: alg }))} />
+                      </Form.Item>
+                      <Form.Item>
+                        <Button type="primary" block icon={<UnlockOutlined />}>
+                          Decrypt
+                        </Button>
+                      </Form.Item>
+                    </Form>
+                  </Card>
+                </div>
               </Card>
             </div>
           </>
           )}
 
           {activeTab === 'auth' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>Authentication</Title>
-              
-              <Card size="small" style={{ marginBottom: 24 }}>
-                <Paragraph type="secondary">
-                  Configure authentication settings and providers
-                </Paragraph>
-              </Card>
-
-              {/* Authentication Methods */}
-              <Row gutter={24}>
-                <Col xs={24} lg={12}>
-                  <Card title="Authentication Methods">
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Space>
-                          <LockOutlined style={{ color: '#1890ff' }} />
-                          <Text strong>Local Authentication</Text>
-                        </Space>
-                        <Tag color="success">Enabled</Tag>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Space>
-                          <GlobalOutlined style={{ color: '#52c41a' }} />
-                          <Text strong>LDAP</Text>
-                        </Space>
-                        <Tag color="warning">Disabled</Tag>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Space>
-                          <UserOutlined style={{ color: '#faad14' }} />
-                          <Text strong>OAuth 2.0</Text>
-                        </Space>
-                        <Tag color="warning">Disabled</Tag>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                        <Space>
-                          <SafetyOutlined style={{ color: '#722ed1' }} />
-                          <Text strong>SAML</Text>
-                        </Space>
-                        <Tag color="warning">Disabled</Tag>
-                      </div>
-                    </Space>
-                  </Card>
-                </Col>
-                <Col xs={24} lg={12}>
-                  <Card title="Authentication Settings">
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Session Timeout:</Text>
-                        <Text strong>24 hours</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Max Sessions:</Text>
-                        <Text strong>5 per user</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Password Policy:</Text>
-                        <Text strong>Strong</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                        <Text>2FA Required:</Text>
-                        <Tag color="warning">Disabled</Tag>
-                      </div>
-                    </Space>
-                    <Divider />
-                    <Space>
-                      <Button type="primary" icon={<EditOutlined />}>
-                        Edit Settings
-                      </Button>
-                    </Space>
-                  </Card>
-                </Col>
-              </Row>
-
-              {/* Password Policy */}
-              <Card title="Password Policy" style={{ marginTop: 24 }}>
-                <Row gutter={24}>
-                  <Col xs={24} lg={12}>
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Minimum Length:</Text>
-                        <Text strong>8 characters</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Require Uppercase:</Text>
-                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Require Lowercase:</Text>
-                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                        <Text>Require Numbers:</Text>
-                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      </div>
-                    </Space>
-                  </Col>
-                  <Col xs={24} lg={12}>
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Require Special Chars:</Text>
-                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Max Attempts:</Text>
-                        <Text strong>5</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                        <Text>Lockout Duration:</Text>
-                        <Text strong>30 minutes</Text>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                        <Text>Password Expiry:</Text>
-                        <Text strong>90 days</Text>
-                      </div>
-                    </Space>
-                  </Col>
-                </Row>
-              </Card>
-            </div>
+            <TabEmptyState
+              label="Authentication"
+              description="Authentication provider configuration has no backing endpoint yet."
+            />
           )}
 
           {activeTab === 'authorization' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>Authorization</Title>
-              
-              <Card size="small" style={{ marginBottom: 24 }}>
-                <Paragraph type="secondary">
-                  Configure fine-grained access control policies
-                </Paragraph>
-              </Card>
-
-              {/* Authorization Matrix */}
-              <Card title="Access Control Matrix">
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid #f0f0f0' }}>
-                        <th style={{ textAlign: 'left', padding: 12, background: '#fafafa' }}>Resource</th>
-                        {roles.map(role => (
-                          <th key={role.id} style={{ textAlign: 'center', padding: 12, background: '#fafafa' }}>
-                            {role.name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[
-                        { name: 'Graph Analytics', key: 'graph' },
-                        { name: 'AI/ML', key: 'ai' },
-                        { name: 'Scraping', key: 'scraping' },
-                        { name: 'Threat Intel', key: 'threat' },
-                        { name: 'Security', key: 'security' },
-                        { name: 'Settings', key: 'settings' },
-                      ].map(resource => (
-                        <tr key={resource.key} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: 12, fontWeight: 600 }}>{resource.name}</td>
-                          {roles.map(role => (
-                            <td key={role.id} style={{ textAlign: 'center', padding: 12 }}>
-                              {role.permissions.includes('*') || role.permissions.includes(`access:${resource.key}`) ? (
-                                <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                              ) : (
-                                <CloseCircleOutlined style={{ color: '#f5222d' }} />
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-
-              {/* Policy Editor */}
-              <Card title="Policy Editor" style={{ marginTop: 24 }}>
-                <Row gutter={24}>
-                  <Col xs={24} lg={12}>
-                    <Card title="Create New Policy" size="small">
-                      <Form layout="vertical">
-                        <Form.Item label="Policy Name">
-                          <Input placeholder="Enter policy name" />
-                        </Form.Item>
-                        <Form.Item label="Description">
-                          <Input.TextArea rows={2} placeholder="Enter description" />
-                        </Form.Item>
-                        <Form.Item label="Resource">
-                          <Select options={[
-                            { label: 'All', value: '*' },
-                            { label: 'Graph Analytics', value: 'graph' },
-                            { label: 'AI/ML', value: 'ai' },
-                            { label: 'Scraping', value: 'scraping' },
-                            { label: 'Threat Intel', value: 'threat' },
-                            { label: 'Security', value: 'security' },
-                          ]} />
-                        </Form.Item>
-                        <Form.Item label="Actions">
-                          <Select mode="multiple" options={[
-                            { label: 'Read', value: 'read' },
-                            { label: 'Write', value: 'write' },
-                            { label: 'Delete', value: 'delete' },
-                            { label: 'Execute', value: 'execute' },
-                          ]} />
-                        </Form.Item>
-                        <Form.Item>
-                          <Button type="primary" block icon={<PlusOutlined />}>
-                            Create Policy
-                          </Button>
-                        </Form.Item>
-                      </Form>
-                    </Card>
-                  </Col>
-                  <Col xs={24} lg={12}>
-                    <Card title="Existing Policies" size="small">
-                      <List
-                        dataSource={[
-                          { id: 'policy-1', name: 'Admin Full Access', description: 'Full access to all resources' },
-                          { id: 'policy-2', name: 'Analyst Read-Only', description: 'Read-only access to data' },
-                          { id: 'policy-3', name: 'Scraper Limited', description: 'Can only create and manage jobs' },
-                        ]}
-                        renderItem={(policy: any) => (
-                          <List.Item>
-                            <List.Item.Meta
-                              title={policy.name}
-                              description={policy.description}
-                            />
-                            <Space>
-                              <Button type="link" size="small" icon={<EditOutlined />}>
-                                Edit
-                              </Button>
-                              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                                Delete
-                              </Button>
-                            </Space>
-                          </List.Item>
-                        )}
-                      />
-                    </Card>
-                  </Col>
-                </Row>
-              </Card>
-            </div>
+            <TabEmptyState
+              label="Authorization"
+              description="Fine-grained access control policy management has no backing endpoint yet."
+            />
           )}
 
           {activeTab === 'compliance' && (
-            <>
-            <Alert type="info" showIcon style={{ marginBottom: 16 }}
-              message="Sample data"
-              description="Compliance metrics are illustrative - no backend endpoint provides them yet." />
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>Compliance</Title>
-              
-              {/* Stats */}
-              <Row gutter={24} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Total Checks"
-                      value={mockComplianceStats.totalChecks}
-                      prefix={<CheckCircleOutlined style={{ color: '#1890ff' }} />}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Passed Checks"
-                      value={mockComplianceStats.passedChecks}
-                      prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                      suffix={<Tag color="success">{(mockComplianceStats.complianceRate * 100).toFixed(1)}%</Tag>}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Failed Checks"
-                      value={mockComplianceStats.failedChecks}
-                      prefix={<CloseCircleOutlined style={{ color: '#f5222d' }} />}
-                    />
-                  </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                  <Card>
-                    <Statistic
-                      title="Last Audit"
-                      value={mockComplianceStats.lastAudit}
-                      prefix={<AuditOutlined style={{ color: '#722ed1' }} />}
-                    />
-                  </Card>
-                </Col>
-              </Row>
-
-              {/* Compliance Chart */}
-              <Card title="Compliance Status" style={{ marginBottom: 24 }}>
-                <Bar
-                  data={[
-                    { category: 'Passed', value: mockComplianceStats.passedChecks, color: '#52c41a' },
-                    { category: 'Failed', value: mockComplianceStats.failedChecks, color: '#f5222d' },
-                  ]}
-                  xField="category"
-                  yField="value"
-                  colorField="color"
-                  height={200}
-                />
-              </Card>
-
-              {/* Compliance Checks */}
-              <Card title="Compliance Checks">
-                <List
-                  dataSource={[
-                    { id: 'check-1', name: 'Password Policy', status: 'passed', category: 'Security' },
-                    { id: 'check-2', name: 'Data Encryption', status: 'passed', category: 'Security' },
-                    { id: 'check-3', name: 'Access Logging', status: 'passed', category: 'Audit' },
-                    { id: 'check-4', name: 'Data Retention', status: 'failed', category: 'Data' },
-                    { id: 'check-5', name: 'User Access Review', status: 'passed', category: 'Access' },
-                  ]}
-                  renderItem={(check: any) => (
-                    <List.Item>
-                      <List.Item.Meta
-                        avatar={
-                          <Avatar
-                            icon={check.status === 'passed' ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-                            style={{ background: check.status === 'passed' ? '#52c41a' : '#f5222d' }}
-                          />
-                        }
-                        title={check.name}
-                        description={
-                          <Space>
-                            <Tag color={check.status === 'passed' ? 'success' : 'error'}>
-                              {check.status}
-                            </Tag>
-                            <Text type="secondary">{check.category}</Text>
-                          </Space>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
-              </Card>
-
-              {/* Actions */}
-              <Card title="Actions" style={{ marginTop: 24 }}>
-                <Space>
-                  <Button type="primary" icon={<SyncOutlined />}>
-                    Run Audit
-                  </Button>
-                  <Button icon={<ExportOutlined />}>
-                    Export Report
-                  </Button>
-                  <Button icon={<SettingOutlined />}>
-                    Configure Checks
-                  </Button>
-                </Space>
-              </Card>
-            </div>
-          </>
+            <TabEmptyState
+              label="Compliance"
+              description="Compliance checks and reporting have no backing endpoint yet."
+            />
           )}
         </Card>
       </motion.div>

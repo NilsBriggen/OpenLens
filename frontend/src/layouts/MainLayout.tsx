@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Button, Dropdown, Avatar, Badge, theme, Drawer } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Layout, Menu, Dropdown, Avatar, Badge, Drawer } from 'antd';
 import {
   DashboardOutlined,
   ProjectOutlined,
@@ -11,7 +11,6 @@ import {
   MenuOutlined,
   UserOutlined,
   LogoutOutlined,
-  HomeOutlined,
   AppstoreOutlined,
   BarChartOutlined,
   SafetyOutlined,
@@ -32,17 +31,21 @@ import {
   NodeIndexOutlined,
   ClusterOutlined,
   BranchesOutlined,
-  BlockOutlined
+  BlockOutlined,
+  RightOutlined,
+  DownOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Cookies from 'js-cookie';
 import { motion } from 'framer-motion';
-import { useTheme } from '../hooks/useApi';
+import { useTheme, useAlerts } from '../hooks/useApi';
+import { useWebSocket as useWebSocketContext } from '../contexts/WebSocketContext';
+import LivePill from '../components/common/LivePill';
 
 const { Header, Sider, Content } = Layout;
 
 interface MainLayoutProps {
-  onRouteChange?: (path: string) => void;
   children: React.ReactNode;
   // Optional overrides. MainLayout manages theme itself via useTheme, so App
   // no longer has to thread these through every route (it never did, which
@@ -51,32 +54,151 @@ interface MainLayoutProps {
   isDarkMode?: boolean;
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMode, onRouteChange }) => {
+interface MenuLeaf {
+  key: string;
+  icon: React.ReactNode;
+  label: string;
+}
+
+interface MenuGroup extends MenuLeaf {
+  children?: MenuLeaf[];
+}
+
+const mainMenuItems: MenuGroup[] = [
+  {
+    key: 'dashboard',
+    icon: <DashboardOutlined />,
+    label: 'Dashboard',
+  },
+  {
+    key: 'graph',
+    icon: <ProjectOutlined />,
+    label: 'Graph Explorer',
+    children: [
+      { key: 'graph-overview', label: 'Overview', icon: <AppstoreOutlined /> },
+      { key: 'graph-network', label: 'Network Analysis', icon: <BarChartOutlined /> },
+      { key: 'graph-paths', label: 'Path Finding', icon: <BranchesOutlined /> },
+      { key: 'graph-communities', label: 'Communities', icon: <ClusterOutlined /> },
+      { key: 'graph-temporal', label: 'Temporal Analysis', icon: <SyncOutlined /> },
+      { key: 'graph-visualization', label: 'Visualization', icon: <EyeOutlined /> },
+    ],
+  },
+  {
+    key: 'ai',
+    icon: <RobotOutlined />,
+    label: 'AI Analytics',
+    children: [
+      { key: 'ai-anomalies', label: 'Anomaly Detection', icon: <AlertOutlined /> },
+      { key: 'ai-entities', label: 'Entity Resolution', icon: <TeamOutlined /> },
+      { key: 'ai-predictions', label: 'Predictive Analytics', icon: <FileSearchOutlined /> },
+      { key: 'ai-classification', label: 'Classification', icon: <FilterOutlined /> },
+      { key: 'ai-clustering', label: 'Clustering', icon: <ClusterOutlined /> },
+      { key: 'ai-nlp', label: 'NLP Analysis', icon: <FileTextOutlined /> },
+      { key: 'ai-recommendations', label: 'Recommendations', icon: <ThunderboltOutlined /> },
+    ],
+  },
+  {
+    key: 'scraping',
+    icon: <SearchOutlined />,
+    label: 'Scraping Hub',
+    children: [
+      { key: 'scraping-jobs', label: 'Scrape Jobs', icon: <DatabaseOutlined /> },
+      { key: 'scraping-proxies', label: 'Proxy Manager', icon: <GlobalOutlined /> },
+      { key: 'scraping-agents', label: 'User Agents', icon: <UserOutlined /> },
+      { key: 'scraping-rate', label: 'Rate Limiting', icon: <BlockOutlined /> },
+      { key: 'scraping-cache', label: 'Result Cache', icon: <CodeOutlined /> },
+      { key: 'scraping-distributed', label: 'Distributed', icon: <ShareAltOutlined /> },
+      { key: 'scraping-scheduler', label: 'Scheduler', icon: <SyncOutlined /> },
+      { key: 'scraping-export', label: 'Data Export', icon: <FileTextOutlined /> },
+      { key: 'scraping-monitoring', label: 'Monitoring', icon: <EyeOutlined /> },
+    ],
+  },
+  {
+    key: 'security',
+    icon: <SafetyCertificateOutlined />,
+    label: 'Security Center',
+    children: [
+      { key: 'security-users', label: 'User Management', icon: <TeamOutlined /> },
+      { key: 'security-roles', label: 'RBAC', icon: <SafetyOutlined /> },
+      { key: 'security-audit', label: 'Audit Logging', icon: <AuditOutlined /> },
+      { key: 'security-encryption', label: 'Encryption', icon: <KeyOutlined /> },
+      { key: 'security-auth', label: 'Authentication', icon: <UserOutlined /> },
+      { key: 'security-authorization', label: 'Authorization', icon: <SafetyCertificateOutlined /> },
+      { key: 'security-compliance', label: 'Compliance', icon: <FileTextOutlined /> },
+    ],
+  },
+  {
+    key: 'threat',
+    icon: <AlertOutlined />,
+    label: 'Threat Intelligence',
+    children: [
+      { key: 'threat-feeds', label: 'Threat Feeds', icon: <GlobalOutlined /> },
+      { key: 'threat-iocs', label: 'IOC Management', icon: <DatabaseOutlined /> },
+      { key: 'threat-analysis', label: 'Threat Analysis', icon: <FileSearchOutlined /> },
+      { key: 'threat-alerts', label: 'Alert Management', icon: <BellOutlined /> },
+      { key: 'threat-hunting', label: 'Threat Hunting', icon: <SearchOutlined /> },
+      { key: 'threat-sharing', label: 'Intel Sharing', icon: <ShareAltOutlined /> },
+      { key: 'threat-monitoring', label: 'Monitoring', icon: <EyeOutlined /> },
+      { key: 'threat-graph', label: 'Threat Graph', icon: <ProjectOutlined /> },
+    ],
+  },
+  {
+    key: 'settings',
+    icon: <SettingOutlined />,
+    label: 'Settings',
+  },
+];
+
+const findLabel = (key: string): string => {
+  for (const item of mainMenuItems) {
+    if (item.key === key) return item.label;
+    const child = item.children?.find((c) => c.key === key);
+    if (child) return child.label;
+  }
+  return 'Dashboard';
+};
+
+const routeToKeyMap: Record<string, string> = {
+  '/': 'dashboard',
+  '/graph': 'graph',
+  '/ai': 'ai',
+  '/scraping': 'scraping',
+  '/security': 'security',
+  '/threat': 'threat',
+  '/settings': 'settings',
+};
+
+const routeMap: Record<string, string> = {
+  dashboard: '/',
+  graph: '/graph',
+  ai: '/ai',
+  scraping: '/scraping',
+  security: '/security',
+  threat: '/threat',
+  settings: '/settings',
+};
+
+const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMode }) => {
   const { theme: currentTheme, toggleTheme: toggleThemeInternal } = useTheme();
   const resolvedToggleTheme = toggleTheme ?? toggleThemeInternal;
   const resolvedIsDarkMode = isDarkMode ?? currentTheme === 'dark';
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeKey, setActiveKey] = useState('dashboard');
-  const [notifications, setNotifications] = useState(5);
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
+  const { isConnected } = useWebSocketContext();
+  // Single source for the notification count - the header bell and the
+  // AI-assistant float button both read this same query, so they can never
+  // disagree the way a hard-coded 5 and a Math.random() mock used to.
+  const { data: activeAlerts } = useAlerts({ status: 'active' });
+  const notifications = activeAlerts?.length ?? 0;
 
   const user = {
     name: 'Admin',
     avatar: 'A',
-    role: 'Administrator'
-  };
-
-  // Map routes to menu keys
-  const routeToKeyMap: Record<string, string> = {
-    '/': 'dashboard',
-    '/graph': 'graph',
-    '/ai': 'ai',
-    '/scraping': 'scraping',
-    '/security': 'security',
-    '/threat': 'threat',
-    '/settings': 'settings'
+    role: 'Administrator',
   };
 
   useEffect(() => {
@@ -84,20 +206,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
     setActiveKey(currentKey);
   }, [location.pathname]);
 
+  // Auto-open the group containing the active item. Only one group is open
+  // at a time - enforced again in onOpenChange for user-driven toggles.
+  useEffect(() => {
+    const parent = mainMenuItems.find((item) => item.children?.some((c) => c.key === activeKey));
+    setOpenKeys(parent ? [parent.key] : []);
+  }, [activeKey]);
+
   const handleMenuClick = (key: string) => {
     setActiveKey(key);
     setMobileMenuOpen(false);
-    
-    const routeMap: Record<string, string> = {
-      'dashboard': '/',
-      'graph': '/graph',
-      'ai': '/ai',
-      'scraping': '/scraping',
-      'security': '/security',
-      'threat': '/threat',
-      'settings': '/settings'
-    };
-    
     navigate(routeMap[key] || '/');
   };
 
@@ -130,114 +248,24 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
     },
   ];
 
-  const mainMenuItems = [
-    {
-      key: 'dashboard',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: 'graph',
-      icon: <ProjectOutlined />,
-      label: 'Graph Explorer',
-      children: [
-        { key: 'graph-overview', label: 'Overview', icon: <AppstoreOutlined /> },
-        { key: 'graph-network', label: 'Network Analysis', icon: <BarChartOutlined /> },
-        { key: 'graph-paths', label: 'Path Finding', icon: <BranchesOutlined /> },
-        { key: 'graph-communities', label: 'Communities', icon: <ClusterOutlined /> },
-        { key: 'graph-temporal', label: 'Temporal Analysis', icon: <SyncOutlined /> },
-        { key: 'graph-visualization', label: 'Visualization', icon: <EyeOutlined /> },
-      ],
-    },
-    {
-      key: 'ai',
-      icon: <RobotOutlined />,
-      label: 'AI Analytics',
-      children: [
-        { key: 'ai-anomalies', label: 'Anomaly Detection', icon: <AlertOutlined /> },
-        { key: 'ai-entities', label: 'Entity Resolution', icon: <TeamOutlined /> },
-        { key: 'ai-predictions', label: 'Predictive Analytics', icon: <FileSearchOutlined /> },
-        { key: 'ai-classification', label: 'Classification', icon: <FilterOutlined /> },
-        { key: 'ai-clustering', label: 'Clustering', icon: <ClusterOutlined /> },
-        { key: 'ai-nlp', label: 'NLP Analysis', icon: <FileTextOutlined /> },
-        { key: 'ai-recommendations', label: 'Recommendations', icon: <ThunderboltOutlined /> },
-      ],
-    },
-    {
-      key: 'scraping',
-      icon: <SearchOutlined />,
-      label: 'Scraping Hub',
-      children: [
-        { key: 'scraping-jobs', label: 'Scrape Jobs', icon: <DatabaseOutlined /> },
-        { key: 'scraping-proxies', label: 'Proxy Manager', icon: <GlobalOutlined /> },
-        { key: 'scraping-agents', label: 'User Agents', icon: <UserOutlined /> },
-        { key: 'scraping-rate', label: 'Rate Limiting', icon: <BlockOutlined /> },
-        { key: 'scraping-cache', label: 'Result Cache', icon: <CodeOutlined /> },
-        { key: 'scraping-distributed', label: 'Distributed', icon: <ShareAltOutlined /> },
-        { key: 'scraping-scheduler', label: 'Scheduler', icon: <SyncOutlined /> },
-        { key: 'scraping-export', label: 'Data Export', icon: <FileTextOutlined /> },
-        { key: 'scraping-monitoring', label: 'Monitoring', icon: <EyeOutlined /> },
-      ],
-    },
-    {
-      key: 'security',
-      icon: <SafetyCertificateOutlined />,
-      label: 'Security Center',
-      children: [
-        { key: 'security-users', label: 'User Management', icon: <TeamOutlined /> },
-        { key: 'security-roles', label: 'RBAC', icon: <SafetyOutlined /> },
-        { key: 'security-audit', label: 'Audit Logging', icon: <AuditOutlined /> },
-        { key: 'security-encryption', label: 'Encryption', icon: <KeyOutlined /> },
-        { key: 'security-auth', label: 'Authentication', icon: <UserOutlined /> },
-        { key: 'security-authorization', label: 'Authorization', icon: <SafetyCertificateOutlined /> },
-        { key: 'security-compliance', label: 'Compliance', icon: <FileTextOutlined /> },
-      ],
-    },
-    {
-      key: 'threat',
-      icon: <AlertOutlined />,
-      label: 'Threat Intelligence',
-      children: [
-        { key: 'threat-feeds', label: 'Threat Feeds', icon: <GlobalOutlined /> },
-        { key: 'threat-iocs', label: 'IOC Management', icon: <DatabaseOutlined /> },
-        { key: 'threat-analysis', label: 'Threat Analysis', icon: <FileSearchOutlined /> },
-        { key: 'threat-alerts', label: 'Alert Management', icon: <BellOutlined /> },
-        { key: 'threat-hunting', label: 'Threat Hunting', icon: <SearchOutlined /> },
-        { key: 'threat-sharing', label: 'Intel Sharing', icon: <ShareAltOutlined /> },
-        { key: 'threat-monitoring', label: 'Monitoring', icon: <EyeOutlined /> },
-        { key: 'threat-graph', label: 'Threat Graph', icon: <ProjectOutlined /> },
-      ],
-    },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Settings',
-    },
-  ];
+  // Shared item config for both the desktop and mobile menus - antd v5
+  // deprecates the JSX Menu.Item/Menu.SubMenu children form in favor of this.
+  const menuItems = useMemo(
+    () =>
+      mainMenuItems.map((item) => ({
+        key: item.key,
+        icon: item.icon,
+        label: item.label,
+        children: item.children?.map((child) => ({
+          key: child.key,
+          icon: child.icon,
+          label: child.label,
+        })),
+      })),
+    []
+  );
 
-  const renderMenuItem = (item: any) => {
-    if (item.children) {
-      return (
-        <Menu.SubMenu
-          key={item.key}
-          icon={item.icon}
-          title={item.label}
-          popupClassName="main-menu-submenu"
-        >
-          {item.children.map(renderMenuItem)}
-        </Menu.SubMenu>
-      );
-    }
-    return (
-      <Menu.Item
-        key={item.key}
-        icon={item.icon}
-        onClick={() => handleMenuClick(item.key)}
-      >
-        {item.label}
-      </Menu.Item>
-    );
-  };
+  const currentPageLabel = useMemo(() => findLabel(activeKey), [activeKey]);
 
   const mobileMenu = (
     <Drawer
@@ -246,24 +274,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
       onClose={() => setMobileMenuOpen(false)}
       open={mobileMenuOpen}
       width={256}
-      bodyStyle={{ padding: 0 }}
-      headerStyle={{ display: 'none' }}
+      styles={{ body: { padding: 0 }, header: { display: 'none' } }}
     >
-      <Menu
-        mode="inline"
-        selectedKeys={[activeKey]}
-        items={mainMenuItems.map(item => ({
-          key: item.key,
-          icon: item.icon,
-          label: item.label,
-          children: item.children?.map(child => ({
-            key: child.key,
-            icon: child.icon,
-            label: child.label,
-          })),
-        }))}
-        onClick={({ key }) => handleMenuClick(key)}
-      />
+      <Menu mode="inline" selectedKeys={[activeKey]} items={menuItems} onClick={({ key }) => handleMenuClick(key)} />
     </Drawer>
   );
 
@@ -271,7 +284,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
     <Layout style={{ minHeight: '100vh' }}>
       {/* Mobile Menu */}
       {mobileMenu}
-      
+
       {/* Desktop Sidebar */}
       <Sider
         collapsible
@@ -292,32 +305,33 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
           zIndex: 100,
         }}
       >
-        <div className="logo-container" style={{
-          padding: 16,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          height: 64,
-          overflow: 'hidden',
-        }}>
+        <div
+          style={{
+            padding: '0 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            height: 64,
+            overflow: 'hidden',
+          }}
+        >
           {!collapsed ? (
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10 }}
             >
               <NodeIndexOutlined style={{ fontSize: 24, color: '#1890ff' }} />
-              <span style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: 'white',
-                whiteSpace: 'nowrap',
-              }}>
+              <span
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  letterSpacing: '-0.01em',
+                  color: 'white',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 OpenLens
               </span>
             </motion.div>
@@ -325,120 +339,116 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
             <NodeIndexOutlined style={{ fontSize: 24, color: '#1890ff' }} />
           )}
         </div>
-        
+
         <Menu
           mode="inline"
+          theme="dark"
           selectedKeys={[activeKey]}
+          openKeys={openKeys}
+          onOpenChange={(keys) => {
+            const latest = keys.find((key) => !openKeys.includes(key));
+            setOpenKeys(latest ? [latest] : []);
+          }}
+          onClick={({ key }) => handleMenuClick(key)}
+          items={menuItems}
           style={{
             height: 'calc(100vh - 64px)',
             borderRight: 0,
           }}
           className="main-menu"
-        >
-          {mainMenuItems.map(renderMenuItem)}
-        </Menu>
+        />
       </Sider>
-      
+
       {/* Main Content */}
-      <Layout style={{
-        marginLeft: collapsed ? 80 : 256,
-        transition: 'margin-left 0.2s ease',
-      }}>
+      <Layout className={`main-content-shell${collapsed ? ' collapsed' : ''}`}>
         {/* Header */}
-        <Header style={{
-          padding: '0 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          height: 64,
-          background: theme.useToken().token.colorBgBase,
-          borderBottom: `1px solid ${theme.useToken().token.colorBorderSecondary}`,
-        }}>
-          <div style={{
+        <Header
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 20,
+            padding: '0 24px',
             display: 'flex',
             alignItems: 'center',
-            gap: 16,
-          }}>
-            <Button
-              type="text"
-              icon={<MenuOutlined />}
+            justifyContent: 'space-between',
+            height: 64,
+            background: 'var(--card-bg)',
+            borderBottom: '1px solid var(--border-color-secondary)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button
+              type="button"
+              className="ol-icon-btn mobile-menu-btn"
+              style={{ display: 'none', border: 'none' }}
               onClick={() => setMobileMenuOpen(true)}
-              style={{
-                display: 'none',
-              }}
-              className="mobile-menu-btn"
-            />
-            <Button
-              type="text"
-              icon={resolvedIsDarkMode ? <SunOutlined /> : <MoonOutlined />}
-              onClick={resolvedToggleTheme}
-              style={{
-                fontSize: 16,
-              }}
-            />
-          </div>
-          
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-          }}>
-            <Badge count={notifications} size="small">
-              <Button
-                type="text"
-                icon={<BellOutlined style={{ fontSize: 18 }} />}
-                style={{
-                  padding: '0 8px',
-                }}
-              />
-            </Badge>
-            
-            <Dropdown
-              menu={{ items: userMenuItems }}
-              trigger={['click']}
-              placement="bottomRight"
+              aria-label="Open menu"
             >
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                cursor: 'pointer',
-                padding: '8px 12px',
-                borderRadius: 8,
-                transition: 'background 0.3s',
-              }}
+              <MenuOutlined />
+            </button>
+            <button
+              type="button"
+              className="ol-icon-btn"
+              style={{ fontSize: 16, border: 'none' }}
+              onClick={resolvedToggleTheme}
+              aria-label="Toggle theme"
+            >
+              {resolvedIsDarkMode ? <SunOutlined /> : <MoonOutlined />}
+            </button>
+            <span style={{ width: 1, height: 20, background: 'var(--border-color)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <span style={{ color: 'var(--text-color-tertiary)' }}>OpenLens</span>
+              <RightOutlined style={{ fontSize: 10, color: 'var(--text-color-tertiary)' }} />
+              <span style={{ color: 'var(--text-color)' }}>{currentPageLabel}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <LivePill connected={isConnected} />
+
+            <Badge count={notifications} size="small" offset={[-4, 4]}>
+              <button type="button" className="ol-icon-btn" style={{ border: 'none' }} aria-label="Notifications">
+                <BellOutlined style={{ fontSize: 18 }} />
+              </button>
+            </Badge>
+
+            <button type="button" className="ol-icon-btn" style={{ border: 'none' }} aria-label="Help">
+              <QuestionCircleOutlined style={{ fontSize: 18 }} />
+            </button>
+
+            <Dropdown menu={{ items: userMenuItems }} trigger={['click']} placement="bottomRight">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: 8,
+                  transition: 'background 0.2s',
+                }}
               >
-                <Avatar
-                  style={{
-                    background: '#1890ff',
-                    color: 'white',
-                  }}
-                >
+                <Avatar size={32} style={{ background: '#1890ff', color: 'white' }}>
                   {user.avatar}
                 </Avatar>
-                <div style={{
-                  display: 'none',
-                }}>
-                  <div style={{ fontWeight: 600 }}>{user.name}</div>
-                  <div style={{ fontSize: 12, color: theme.useToken().token.colorTextSecondary }}>
-                    {user.role}
-                  </div>
+                <div style={{ lineHeight: 1.2 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-color)' }}>{user.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-color-tertiary)' }}>{user.role}</div>
                 </div>
+                <DownOutlined style={{ fontSize: 10, color: 'var(--text-color-tertiary)' }} />
               </div>
             </Dropdown>
           </div>
         </Header>
-        
+
         {/* Content */}
-        <Content style={{
-          padding: 24,
-          minHeight: 'calc(100vh - 64px)',
-        }}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
+        <Content
+          style={{
+            padding: 24,
+            minHeight: 'calc(100vh - 64px)',
+          }}
+        >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
             {children}
           </motion.div>
         </Content>
@@ -447,7 +457,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, toggleTheme, isDarkMo
   );
 };
 
-// Temporary icons for theme toggle
+// antd v5 ships no Sun/MoonOutlined icon - kept as small inline SVGs.
 const SunOutlined = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="12" cy="12" r="5" />

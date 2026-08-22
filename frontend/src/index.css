@@ -27,34 +27,81 @@ body {
 :root {
   --bg-color: #f0f2f5;
   --bg-color-secondary: #ffffff;
-  --text-color: #000000;
-  --text-color-secondary: #666666;
+  --text-color: rgba(0, 0, 0, 0.88);
+  --text-color-secondary: rgba(0, 0, 0, 0.65);
+  /* "description" tier - the dimmest text (stat labels, sub-lines, monospace ids) */
+  --text-color-tertiary: rgba(0, 0, 0, 0.45);
   --border-color: #d9d9d9;
+  --border-color-secondary: #f0f0f0;
+  --track-color: #f0f0f0;
+  --hover-color: rgba(0, 0, 0, 0.04);
   --primary-color: #1890ff;
   --primary-color-hover: #40a9ff;
+  --primary-color-active: #096dd9;
   --success-color: #52c41a;
   --warning-color: #faad14;
   --error-color: #f5222d;
-  --shadow-color: rgba(0, 0, 0, 0.1);
+  --purple-color: #722ed1;
+  --primary-soft: rgba(24, 144, 255, 0.1);
+  --success-soft: rgba(82, 196, 26, 0.1);
+  --warning-soft: rgba(250, 173, 20, 0.1);
+  --error-soft: rgba(245, 34, 45, 0.1);
+  --purple-soft: rgba(114, 46, 209, 0.1);
+  --shadow-color: rgba(0, 0, 0, 0.08);
   --card-bg: #ffffff;
   --sidebar-bg: #001529;
   --sidebar-text: #ffffff;
   --header-height: 64px;
   --sidebar-width: 256px;
+
+  /* Layout grids - see the UI polish handoff for the reasoning behind each. */
+  --ol-g-stats: repeat(auto-fit, minmax(250px, 1fr));
+  --ol-g-stats-sm: repeat(auto-fit, minmax(148px, 1fr));
+  --ol-g-stats-md: repeat(auto-fit, minmax(168px, 1fr));
+  --ol-g-2-1: minmax(0, 2fr) minmax(0, 1fr);
+  --ol-g-half: repeat(2, minmax(0, 1fr));
+  --ol-g-quarter: repeat(4, minmax(0, 1fr));
+  --ol-g-split: minmax(0, 2.4fr) minmax(240px, 1fr);
+}
+
+@media (max-width: 1180px) {
+  :root {
+    --ol-g-2-1: minmax(0, 1fr);
+    --ol-g-quarter: repeat(2, minmax(0, 1fr));
+    --ol-g-split: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --ol-g-half: minmax(0, 1fr);
+    --ol-g-quarter: minmax(0, 1fr);
+  }
 }
 
 [data-theme="dark"] {
-  --bg-color: #001529;
-  --bg-color-secondary: #000c17;
-  --text-color: #ffffff;
-  --text-color-secondary: #a0a0a0;
+  --bg-color: #000c17;
+  --bg-color-secondary: #001529;
+  --text-color: rgba(255, 255, 255, 0.88);
+  --text-color-secondary: rgba(255, 255, 255, 0.65);
+  --text-color-tertiary: rgba(255, 255, 255, 0.45);
   --border-color: #303030;
+  --border-color-secondary: #303030;
+  --track-color: #303030;
+  --hover-color: rgba(255, 255, 255, 0.08);
   --primary-color: #1890ff;
   --primary-color-hover: #40a9ff;
+  --primary-color-active: #096dd9;
   --success-color: #52c41a;
   --warning-color: #faad14;
   --error-color: #f5222d;
-  --shadow-color: rgba(0, 0, 0, 0.3);
+  --purple-color: #722ed1;
+  --primary-soft: rgba(24, 144, 255, 0.16);
+  --success-soft: rgba(82, 196, 26, 0.16);
+  --warning-soft: rgba(250, 173, 20, 0.16);
+  --error-soft: rgba(245, 34, 45, 0.16);
+  --purple-soft: rgba(114, 46, 209, 0.16);
+  --shadow-color: rgba(0, 0, 0, 0.45);
   --card-bg: #141414;
   --sidebar-bg: #001529;
   --sidebar-text: #ffffff;
@@ -95,13 +142,50 @@ body {
   background: transparent !important;
 }
 
-.ant-menu-dark .ant-menu-item,
-.ant-menu-dark .ant-menu-submenu {
-  color: var(--sidebar-text) !important;
+/* Sidebar navigation - idle/hover/selected states per the UI polish handoff. */
+.main-menu.ant-menu,
+.main-menu .ant-menu-sub {
+  background: transparent !important;
 }
 
-.ant-menu-dark .ant-menu-item-selected {
+.main-menu .ant-menu-item,
+.main-menu .ant-menu-submenu-title {
+  height: 40px !important;
+  line-height: 40px !important;
+  margin: 4px 8px !important;
+  padding: 0 16px !important;
+  border-radius: 8px !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  width: calc(100% - 16px) !important;
+}
+
+.main-menu .ant-menu-item .anticon,
+.main-menu .ant-menu-submenu-title .anticon {
+  font-size: 16px;
+}
+
+.main-menu .ant-menu-sub .ant-menu-item {
+  padding-left: 48px !important;
+}
+
+.main-menu .ant-menu-sub .ant-menu-item .anticon {
+  font-size: 14px;
+}
+
+.main-menu .ant-menu-item:hover,
+.main-menu .ant-menu-submenu-title:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.main-menu .ant-menu-item-selected {
+  color: #fff !important;
+  font-weight: 500;
   background: var(--primary-color) !important;
+}
+
+.main-menu .ant-menu-submenu-arrow {
+  transition: transform 0.2s;
 }
 
 .ant-card {
@@ -136,6 +220,19 @@ body {
 
 .ant-table-thead > tr > th {
   background: var(--bg-color-secondary) !important;
+  padding: 12px 16px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--text-color-secondary) !important;
+}
+
+.ant-table-tbody > tr > td {
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--border-color-secondary) !important;
+}
+
+.ant-table-tbody > tr:last-child > td {
+  border-bottom: none !important;
 }
 
 .ant-table-tbody > tr:hover > td {
@@ -190,6 +287,16 @@ body {
   }
   50% {
     opacity: 0.5;
+  }
+}
+
+/* Live-pill dot - a slower, subtler pulse than the generic one above. */
+@keyframes olPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
   }
 }
 
@@ -977,6 +1084,180 @@ body {
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* ==========================================================================
+   UI polish - shared primitives (see design_handoff_openlens_ui_polish)
+   ========================================================================== */
+
+/* 32x32 icon button used for theme toggle / help / table row actions. */
+.ol-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-color-secondary);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.ol-icon-btn:hover {
+  background: var(--hover-color);
+  color: var(--text-color);
+}
+
+/* ids / hashes / ips / node keys */
+.ol-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-color-tertiary);
+}
+
+/* Lighter sub-card treatment nested inside a tab or another card. */
+.ol-subcard.ant-card {
+  border: 1px solid var(--border-color-secondary) !important;
+  border-radius: 8px !important;
+}
+
+.ol-subcard .ant-card-head {
+  min-height: 48px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+.ol-subcard .ant-card-body {
+  padding: 20px !important;
+}
+
+/* Section heading + gap-16 to its content, replacing ad-hoc <Divider/> stacks. */
+.ol-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.ol-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ol-section-title {
+  font-size: 20px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+  margin: 0 !important;
+  color: var(--text-color);
+}
+
+/* Two-up rows that must match height, and quarter/stat grids with a real minimum. */
+.ol-row-2up {
+  display: grid;
+  grid-template-columns: var(--ol-g-half);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.ol-row-2-1 {
+  display: grid;
+  grid-template-columns: var(--ol-g-2-1);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.ol-row-split {
+  display: grid;
+  grid-template-columns: var(--ol-g-split);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.ol-row-quarter {
+  display: grid;
+  grid-template-columns: var(--ol-g-quarter);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.ol-stats-grid {
+  display: grid;
+  grid-template-columns: var(--ol-g-stats);
+  gap: 24px;
+}
+
+.ol-stats-grid-md {
+  display: grid;
+  grid-template-columns: var(--ol-g-stats-md);
+  gap: 16px;
+}
+
+.ol-stats-grid-sm {
+  display: grid;
+  grid-template-columns: var(--ol-g-stats-sm);
+  gap: 16px;
+}
+
+/* Cards that pair a dial with a text column - wrap instead of crushing the text. */
+.ol-dial-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.ol-dial-card > * {
+  flex: 1 1 140px;
+}
+
+/* Cards that navigate on click (Quick Actions and similar). */
+.ol-action-card {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ol-action-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px var(--shadow-color);
+  border-color: var(--ol-action-accent, var(--primary-color));
+}
+
+.main-content-shell {
+  margin-left: var(--sidebar-width);
+  transition: margin-left 0.2s ease;
+}
+
+.main-content-shell.collapsed {
+  margin-left: 80px;
+}
+
+@media (max-width: 900px) {
+  .mobile-menu-btn {
+    display: inline-flex !important;
+  }
+
+  .main-sidebar {
+    display: none !important;
+  }
+
+  .main-content-shell,
+  .main-content-shell.collapsed {
+    margin-left: 0 !important;
+  }
+}
+
+.ol-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--warning-soft);
+  border: 1px solid rgba(250, 173, 20, 0.35);
+  color: var(--text-color);
 }
 
 /* Custom Utility Classes */

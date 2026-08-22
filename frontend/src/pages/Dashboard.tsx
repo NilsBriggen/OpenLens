@@ -1,35 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Statistic, Button, Progress, Space, Typography, List, Avatar, Tag, Divider, DatePicker, Select, Input } from 'antd';
+import { Card, Progress, Space, Typography, List, Avatar, Tag, DatePicker, Select, Input } from 'antd';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowUpOutlined,
-  ArrowDownOutlined,
   UserOutlined,
   ProjectOutlined,
   RobotOutlined,
   SearchOutlined,
   SafetyCertificateOutlined,
   AlertOutlined,
-  ClockCircleOutlined,
   ThunderboltOutlined,
   DatabaseOutlined,
   GlobalOutlined,
-  SafetyOutlined,
-  FileTextOutlined,
   NodeIndexOutlined,
   BranchesOutlined,
-  ClusterOutlined,
-  FilterOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { Line, Bar, Pie, Column } from '@ant-design/plots';
+import { Line, Pie } from '@ant-design/plots';
 import dayjs from 'dayjs';
 import {
   useGraphStats, useSystemHealth, useIOCs, useAlerts, useThreatFeeds,
   useScrapeJobs, useAuditLogs,
 } from '../hooks/useApi';
+import StatCard from '../components/common/StatCard';
+import PageHeader from '../components/common/PageHeader';
+import BarList from '../components/common/BarList';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Search } = Input;
@@ -71,6 +68,7 @@ const mockQuickActions = [
 ];
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [dateRange, setDateRange] = useState<any>([dayjs().subtract(7, 'day'), dayjs()]);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -149,7 +147,7 @@ const Dashboard: React.FC = () => {
       case 'error':
         return <Tag color="error">Error</Tag>;
       case 'info':
-        return <Tag color="info">Info</Tag>;
+        return <Tag color="blue">Info</Tag>;
       default:
         return <Tag>Unknown</Tag>;
     }
@@ -186,9 +184,8 @@ const Dashboard: React.FC = () => {
     yField: 'value',
     seriesField: 'type',
     color: ['#1890ff', '#52c41a'],
-    legend: {
-      position: 'top-right' as const,
-    },
+    // Legend moves into the Card header (extra) instead of rendering in-plot.
+    legend: false as const,
     smooth: true,
     // No 'path-in' appear animation here: it measures the element with
     // getTotalLength(), which the point markers rendered below are not, so it
@@ -203,84 +200,59 @@ const Dashboard: React.FC = () => {
     },
   };
 
-  const barConfig = {
-    data: moduleUsage,
-    xField: 'name',
-    yField: 'value',
-    seriesField: 'name',
-    color: ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1'],
-    legend: false,
-    label: {
-      position: 'top' as const,
-      style: {
-        fill: '#fff',
-        fontWeight: 'bold',
-      },
-    },
-    xAxis: {
-      label: {
-        autoRotate: false,
-      },
-    },
-    yAxis: {
-      grid: {
-        line: {
-          style: {
-            stroke: '#f0f0f0',
-          },
-        },
-      },
-    },
-    columnStyle: {
-      radius: [4, 4, 0, 0],
-    },
-  };
+  const moduleUsageColors = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1'];
+
+  const moduleUsageTotal = React.useMemo(
+    () => moduleUsage.reduce((sum, item) => sum + item.value, 0),
+    [moduleUsage]
+  );
 
   const pieConfig = {
     data: moduleUsage,
     angleField: 'value',
     colorField: 'name',
     radius: 0.8,
-    label: {
-      type: 'spider' as const,
-      labelHeight: 28,
-      content: '{name}\n{percentage}' as const,
-      style: {
-        fontSize: 12,
+    innerRadius: 0.64,
+    // Legend and labels move to a simple list below the pie instead of
+    // spider/outside labels, which were cramping this card at half width.
+    label: false as const,
+    legend: false as const,
+    statistic: {
+      title: {
+        content: 'Total',
+        style: { fontSize: '12px', color: 'var(--text-color-tertiary)' },
+      },
+      content: {
+        content: moduleUsageTotal.toLocaleString(),
+        style: { fontSize: '22px', fontWeight: 600, color: 'var(--text-color)' },
       },
     },
     interactions: [{ type: 'element-active' as const }, { type: 'pie-statistic-active' as const }],
-    color: ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1'],
+    color: moduleUsageColors,
   };
 
-  const columnConfig = {
-    data: [
-      { type: 'Today', value: 1245 },
-      { type: 'Yesterday', value: 1189 },
-      { type: 'This Week', value: 8456 },
-      { type: 'Last Week', value: 7834 },
-      { type: 'This Month', value: 35214 },
-      { type: 'Last Month', value: 31567 },
-    ],
-    xField: 'type',
-    yField: 'value',
-    color: '#1890ff',
-    columnStyle: {
-      radius: [4, 4, 0, 0],
-    },
-    label: {
-      position: 'top' as const,
-      style: {
-        fill: '#1890ff',
-        fontWeight: 'bold',
-      },
-    },
-    xAxis: {
-      label: {
-        autoRotate: false,
-      },
-    },
-  };
+  // Activity by Module and Data Ingestion render as horizontal BarLists
+  // instead of a categorical column/bar chart, which clips half-width cards.
+  const activityByModuleItems = React.useMemo(
+    () => moduleUsage.map((item, index) => ({
+      key: item.name,
+      label: item.name,
+      value: item.value,
+      color: moduleUsageColors[index % moduleUsageColors.length],
+    })),
+    [moduleUsage]
+  );
+
+  // Illustrative ingestion figures - no live ingestion-rate endpoint exists
+  // yet, so these are kept exactly as they were, just restyled.
+  const dataIngestionItems = [
+    { key: 'today', label: 'Today', value: 1245 },
+    { key: 'yesterday', label: 'Yesterday', value: 1189 },
+    { key: 'this-week', label: 'This Week', value: 8456 },
+    { key: 'last-week', label: 'Last Week', value: 7834 },
+    { key: 'this-month', label: 'This Month', value: 35214 },
+    { key: 'last-month', label: 'Last Month', value: 31567 },
+  ];
 
   const filteredActivity = recentActivity.filter(activity => {
     if (filter !== 'all' && activity.type !== filter) return false;
@@ -288,33 +260,48 @@ const Dashboard: React.FC = () => {
     return true;
   });
 
+  // Presentation only - the underlying headroom calc (systemStats.systemHealth)
+  // is unchanged.
+  const healthLabel = systemStats.systemHealth > 80 ? 'Healthy' : systemStats.systemHealth > 50 ? 'Degraded' : 'Critical';
+  const healthStrokeColor = systemStats.systemHealth > 80 ? 'var(--success-color)' : systemStats.systemHealth > 50 ? 'var(--warning-color)' : 'var(--error-color)';
+
+  const platformFeatures = [
+    { key: 'graph', icon: <ProjectOutlined style={{ color: '#1890ff' }} />, title: 'Graph Analytics Engine', tagColor: 'blue', count: 6 },
+    { key: 'ai', icon: <RobotOutlined style={{ color: '#52c41a' }} />, title: 'AI/ML Insights', tagColor: 'green', count: 7 },
+    { key: 'scraping', icon: <SearchOutlined style={{ color: '#faad14' }} />, title: 'Distributed Scraping', tagColor: 'orange', count: 9 },
+    { key: 'security', icon: <SafetyCertificateOutlined style={{ color: '#f5222d' }} />, title: 'Enterprise Security', tagColor: 'red', count: 7 },
+    { key: 'threat', icon: <AlertOutlined style={{ color: '#722ed1' }} />, title: 'Threat Intelligence', tagColor: 'purple', count: 8 },
+  ];
+
+  const capabilityHighlights = [
+    'Real-time graph analysis',
+    'Distributed scraping at scale',
+    'AI-powered anomaly detection',
+    'Role-based access control',
+    'Real-time threat intelligence',
+    'Interactive visualizations',
+  ];
+
   return (
-    <div className="dashboard-page">
+    <div className="ol-page-body">
       {/* Page Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="page-header"
       >
-        <div>
-          <Title level={1}>
-            <Space>
-              <NodeIndexOutlined />
-              Dashboard
-            </Space>
-          </Title>
-          <Paragraph type="secondary">
-            Welcome back! Here's an overview of your OpenLens platform.
-          </Paragraph>
-        </div>
-        <Space>
-          <RangePicker
-            value={dateRange}
-            onChange={setDateRange}
-            disabledDate={(current) => current && current > dayjs().endOf('day')}
-          />
-        </Space>
+        <PageHeader
+          icon={<NodeIndexOutlined />}
+          title="Dashboard"
+          subtitle="Welcome back! Here's an overview of your OpenLens platform."
+          actions={
+            <RangePicker
+              value={dateRange}
+              onChange={setDateRange}
+              disabledDate={(current) => current && current > dayjs().endOf('day')}
+            />
+          }
+        />
       </motion.div>
 
       {/* Quick Stats */}
@@ -322,87 +309,69 @@ const Dashboard: React.FC = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
-        className="metrics-dashboard"
       >
-        <Card>
-          <Statistic
-            title="Total Nodes"
+        <div className="ol-stats-grid">
+          <StatCard
+            label="Total Nodes"
             value={systemStats.totalNodes.toLocaleString()}
-            prefix={<NodeIndexOutlined style={{ color: '#1890ff' }} />}
-            suffix={<ArrowUpOutlined style={{ color: '#52c41a' }} />}
+            icon={<NodeIndexOutlined />}
+            accent="primary"
           />
-        </Card>
-        
-        <Card>
-          <Statistic
-            title="Total Relationships"
+          <StatCard
+            label="Total Relationships"
             value={systemStats.totalRelationships.toLocaleString()}
-            prefix={<BranchesOutlined style={{ color: '#52c41a' }} />}
-            suffix={<ArrowUpOutlined style={{ color: '#52c41a' }} />}
+            icon={<BranchesOutlined />}
+            accent="success"
           />
-        </Card>
-        
-        <Card>
-          <Statistic
-            title="Active Users"
-            value={'—'}
-            prefix={<UserOutlined style={{ color: '#faad14' }} />}
-            suffix={<ArrowUpOutlined style={{ color: '#52c41a' }} />}
+          <StatCard
+            label="Active Users"
+            value="—"
+            subLabel="not reported"
+            icon={<UserOutlined />}
+            accent="warning"
           />
-        </Card>
-        
-        <Card>
-          <Statistic
-            title="Scrape Jobs"
+          <StatCard
+            label="Scrape Jobs"
             value={systemStats.activeScrapeJobs}
-            prefix={<SearchOutlined style={{ color: '#722ed1' }} />}
-            suffix={<ArrowDownOutlined style={{ color: '#f5222d' }} />}
+            icon={<SearchOutlined />}
+            accent="purple"
           />
-        </Card>
-        
-        <Card>
-          <Statistic
-            title="Threat Feeds"
+          <StatCard
+            label="Threat Feeds"
             value={systemStats.threatFeeds}
-            prefix={<GlobalOutlined style={{ color: '#1890ff' }} />}
-            suffix={<ArrowUpOutlined style={{ color: '#52c41a' }} />}
+            icon={<GlobalOutlined />}
+            accent="primary"
           />
-        </Card>
-        
-        <Card>
-          <Statistic
-            title="IOCs"
+          <StatCard
+            label="IOCs"
             value={systemStats.iocs.toLocaleString()}
-            prefix={<DatabaseOutlined style={{ color: '#f5222d' }} />}
-            suffix={<ArrowUpOutlined style={{ color: '#52c41a' }} />}
+            icon={<DatabaseOutlined />}
+            accent="error"
           />
-        </Card>
-        
-        <Card>
-          <Statistic
-            title="Alerts"
+          <StatCard
+            label="Alerts"
             value={systemStats.alerts}
-            prefix={<AlertOutlined style={{ color: '#faad14' }} />}
-            suffix={<ArrowUpOutlined style={{ color: '#f5222d' }} />}
+            icon={<AlertOutlined />}
+            accent="warning"
           />
-        </Card>
-        
-        <Card>
-          <div style={{ textAlign: 'center' }}>
-            <Text type="secondary">System Health</Text>
-            <div style={{ marginTop: 8 }}>
+          <Card bodyStyle={{ padding: '20px 24px', minHeight: 120, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <span style={{ fontSize: 14, color: 'var(--text-color-tertiary)' }}>System Health</span>
+            <div className="ol-dial-card" style={{ flex: 1 }}>
               <Progress
                 type="circle"
                 percent={systemHealth?.resources?.cpu_usage || systemStats.systemHealth}
                 status={systemStats.systemHealth > 80 ? 'success' : systemStats.systemHealth > 50 ? 'normal' : 'exception'}
-                strokeColor={systemStats.systemHealth > 80 ? '#52c41a' : systemStats.systemHealth > 50 ? '#faad14' : '#f5222d'}
+                strokeColor={healthStrokeColor}
+                size={64}
               />
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-color)' }}>{healthLabel}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-color-tertiary)', marginTop: 2 }}>CPU · Mem · Disk</div>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       </motion.div>
-
-      <Divider />
 
       {/* Charts Row */}
       <motion.div
@@ -410,41 +379,53 @@ const Dashboard: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
       >
-        <Row gutter={24}>
-          <Col xs={24} lg={16}>
-            <Card title="Graph Growth Trends">
-              <Line {...(lineConfig as any)} />
-            </Card>
-          </Col>
-          <Col xs={24} lg={8}>
-            <Card title="Module Usage">
-              <Pie {...pieConfig} />
-            </Card>
-          </Col>
-        </Row>
+        <div className="ol-row-2-1">
+          <Card
+            title="Graph Growth Trends"
+            extra={
+              <Space size={16}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-color-secondary)' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1890ff', display: 'inline-block' }} />
+                  Nodes
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-color-secondary)' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#52c41a', display: 'inline-block' }} />
+                  Relationships
+                </span>
+              </Space>
+            }
+          >
+            <Line {...(lineConfig as any)} />
+          </Card>
+          <Card title="Module Usage">
+            <Pie {...pieConfig} />
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {moduleUsage.map((item, index) => (
+                <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: moduleUsageColors[index % moduleUsageColors.length], flexShrink: 0 }} />
+                  <span style={{ flex: 1, color: 'var(--text-color-secondary)' }}>{item.name}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-color)' }}>{item.value.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
       </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.3 }}
-        style={{ marginTop: 24 }}
       >
-        <Row gutter={24}>
-          <Col xs={24} lg={12}>
-            <Card title="Activity by Module">
-              <Bar {...(barConfig as any)} />
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title="Data Ingestion">
-              <Column {...columnConfig} />
-            </Card>
-          </Col>
-        </Row>
+        <div className="ol-row-2up">
+          <Card title="Activity by Module">
+            <BarList items={activityByModuleItems} labelWidth={100} />
+          </Card>
+          <Card title="Data Ingestion">
+            <BarList items={dataIngestionItems} labelWidth={100} />
+          </Card>
+        </div>
       </motion.div>
-
-      <Divider />
 
       {/* Quick Actions */}
       <motion.div
@@ -452,50 +433,42 @@ const Dashboard: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.4 }}
       >
-        <Title level={3} style={{ marginBottom: 24 }}>
-          Quick Actions
-        </Title>
-        <Row gutter={24}>
-          {mockQuickActions.map((action) => (
-            <Col xs={24} sm={12} lg={6} key={action.key}>
-              <motion.div
-                whileHover={{ scale: 1.02, y: -4 }}
-                whileTap={{ scale: 0.98 }}
-                transition={{ duration: 0.2 }}
+        <div className="ol-section">
+          <h2 className="ol-section-title">Quick Actions</h2>
+          <div className="ol-row-quarter">
+            {mockQuickActions.map((action) => (
+              <Card
+                key={action.key}
+                className="ol-action-card"
+                style={{ ['--ol-action-accent']: action.color } as React.CSSProperties}
+                onClick={() => navigate(action.path)}
+                bodyStyle={{ padding: 24, textAlign: 'center' }}
               >
-                <Card
-                  style={{ cursor: 'pointer', border: `2px solid ${action.color}20` }}
-                  onClick={() => window.location.href = action.path}
-                  bodyStyle={{ padding: 24, textAlign: 'center' }}
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 12,
+                    background: `${action.color}1A`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px',
+                    fontSize: 24,
+                    color: action.color,
+                  }}
                 >
-                  <div
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 12,
-                      background: `${action.color}20`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: '0 auto 16px',
-                      fontSize: 24,
-                      color: action.color,
-                    }}
-                  >
-                    {action.icon}
-                  </div>
-                  <Title level={5} style={{ margin: 0, marginBottom: 8 }}>
-                    {action.title}
-                  </Title>
-                  <Text type="secondary">{action.description}</Text>
-                </Card>
-              </motion.div>
-            </Col>
-          ))}
-        </Row>
+                  {action.icon}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: 'var(--text-color)' }}>
+                  {action.title}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-color-tertiary)' }}>{action.description}</div>
+              </Card>
+            ))}
+          </div>
+        </div>
       </motion.div>
-
-      <Divider />
 
       {/* Recent Activity */}
       <motion.div
@@ -552,7 +525,7 @@ const Dashboard: React.FC = () => {
                       <Text type="secondary">{item.description}</Text>
                       <br />
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {item.timestamp} • {item.user}
+                        {item.timestamp} · {item.user}
                       </Text>
                     </div>
                   }
@@ -563,80 +536,52 @@ const Dashboard: React.FC = () => {
         </Card>
       </motion.div>
 
-      <Divider />
-
       {/* System Overview */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.6 }}
       >
-        <Title level={3} style={{ marginBottom: 24 }}>
-          System Overview
-        </Title>
-        <Row gutter={24}>
-          <Col xs={24} lg={12}>
+        <div className="ol-section">
+          <h2 className="ol-section-title">System Overview</h2>
+          <div className="ol-row-2up">
             <Card title="Platform Features">
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Space>
-                  <ProjectOutlined style={{ color: '#1890ff' }} />
-                  <Text strong>Graph Analytics Engine</Text>
-                  <Tag color="blue">6 Modules</Tag>
-                </Space>
-                <Space>
-                  <RobotOutlined style={{ color: '#52c41a' }} />
-                  <Text strong>AI/ML Insights</Text>
-                  <Tag color="green">7 Modules</Tag>
-                </Space>
-                <Space>
-                  <SearchOutlined style={{ color: '#faad14' }} />
-                  <Text strong>Distributed Scraping</Text>
-                  <Tag color="orange">9 Modules</Tag>
-                </Space>
-                <Space>
-                  <SafetyCertificateOutlined style={{ color: '#f5222d' }} />
-                  <Text strong>Enterprise Security</Text>
-                  <Tag color="red">7 Modules</Tag>
-                </Space>
-                <Space>
-                  <AlertOutlined style={{ color: '#722ed1' }} />
-                  <Text strong>Threat Intelligence</Text>
-                  <Tag color="purple">8 Modules</Tag>
-                </Space>
-              </Space>
+              {platformFeatures.map((feature, index) => (
+                <div
+                  key={feature.key}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 0',
+                    borderBottom: index < platformFeatures.length - 1 ? '1px solid var(--border-color-secondary)' : 'none',
+                  }}
+                >
+                  {feature.icon}
+                  <Text strong style={{ flex: 1 }}>{feature.title}</Text>
+                  <Tag color={feature.tagColor}>{feature.count} Modules</Tag>
+                </div>
+              ))}
             </Card>
-          </Col>
-          <Col xs={24} lg={12}>
             <Card title="Capability Highlights">
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  <Text>Real-time graph analysis</Text>
-                </Space>
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  <Text>Distributed scraping at scale</Text>
-                </Space>
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  <Text>AI-powered anomaly detection</Text>
-                </Space>
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  <Text>Role-based access control</Text>
-                </Space>
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  <Text>Real-time threat intelligence</Text>
-                </Space>
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  <Text>Interactive visualizations</Text>
-                </Space>
-              </Space>
+              {capabilityHighlights.map((highlight, index) => (
+                <div
+                  key={highlight}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 0',
+                    borderBottom: index < capabilityHighlights.length - 1 ? '1px solid var(--border-color-secondary)' : 'none',
+                  }}
+                >
+                  <CheckCircleOutlined style={{ color: 'var(--success-color)' }} />
+                  <Text>{highlight}</Text>
+                </div>
+              ))}
             </Card>
-          </Col>
-        </Row>
+          </div>
+        </div>
       </motion.div>
     </div>
   );

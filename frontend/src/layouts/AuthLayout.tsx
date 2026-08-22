@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, theme } from 'antd';
+import { Layout } from 'antd';
 import { motion } from 'framer-motion';
 import { NodeIndexOutlined } from '@ant-design/icons';
 
@@ -10,12 +10,10 @@ interface AuthLayoutProps {
 }
 
 const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
-  const { token } = theme.useToken();
-
   return (
     <Layout style={{
       minHeight: '100vh',
-      background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #096dd9 100%)`,
+      background: 'linear-gradient(135deg, var(--primary-color) 0%, #096dd9 100%)',
     }}>
       <Content style={{
         display: 'flex',
@@ -33,7 +31,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
           }}
         >
           <div style={{
-            background: token.colorBgBase,
+            background: 'var(--card-bg)',
             borderRadius: 16,
             padding: 40,
             boxShadow: '0 8px 48px rgba(0, 0, 0, 0.3)',
@@ -50,7 +48,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
                 style={{
                   width: 64,
                   height: 64,
-                  background: `linear-gradient(135deg, ${token.colorPrimary}, #096dd9)`,
+                  background: 'linear-gradient(135deg, var(--primary-color), #096dd9)',
                   borderRadius: 16,
                   display: 'flex',
                   alignItems: 'center',
@@ -63,14 +61,14 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
               <h1 style={{
                 fontSize: 24,
                 fontWeight: 700,
-                color: token.colorTextBase,
+                color: 'var(--text-color)',
                 margin: 0,
               }}>
                 OpenLens
               </h1>
               <p style={{
                 fontSize: 14,
-                color: token.colorTextSecondary,
+                color: 'var(--text-color-tertiary)',
                 margin: '8px 0 0',
               }}>
                 Enterprise-Grade OSINT Platform
@@ -85,11 +83,11 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
               textAlign: 'center',
               marginTop: 32,
               paddingTop: 24,
-              borderTop: `1px solid ${token.colorBorderSecondary}`,
+              borderTop: '1px solid var(--border-color-secondary)',
             }}>
               <p style={{
                 fontSize: 12,
-                color: token.colorTextSecondary,
+                color: 'var(--text-color-tertiary)',
                 margin: 0,
               }}>
                 © {new Date().getFullYear()} OpenLens. All rights reserved.

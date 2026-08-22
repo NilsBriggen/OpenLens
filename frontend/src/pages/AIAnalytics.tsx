@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Tabs, Button, Space, Typography, Row, Col, Divider, Modal, Form, Input, Select, Table, Tag, Progress, Alert, Spin, DatePicker, Statistic } from 'antd';
+import { Card, Tabs, Button, Space, Typography, Row, Col, Modal, Form, Input, Select, Table, Tag, Progress, Alert, Spin, DatePicker } from 'antd';
 import {
   RobotOutlined,
   SearchOutlined,
@@ -25,8 +25,12 @@ import { Line, Bar, Pie, Column, Scatter } from '@ant-design/plots';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { apiClient, aiEndpoints, graphEndpoints } from '../lib/apiClient';
+import { useLocalStorage } from '../hooks/useApi';
+import PageHeader from '../components/common/PageHeader';
+import StatCard from '../components/common/StatCard';
+import TabEmptyState from '../components/common/TabEmptyState';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -35,7 +39,7 @@ const { RangePicker } = DatePicker;
 
 // Mock data
 const AIAnalytics: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('anomalies');
+  const { value: activeTab, setValue: setActiveTab } = useLocalStorage('ai-active-tab', 'anomalies');
   const [anomalyMethod, setAnomalyMethod] = useState('statistical');
   const [entityMethod, setEntityMethod] = useState('exact');
   const [predictionMethod, setPredictionMethod] = useState('common_neighbors');
@@ -219,19 +223,21 @@ const AIAnalytics: React.FC = () => {
       dataIndex: 'id',
       key: 'id',
       width: 120,
+      className: 'ol-mono',
     },
     {
       title: 'Type',
       dataIndex: 'type',
       key: 'type',
       width: 150,
-      render: (type: string) => <Tag color="blue">{type.replace('_', ' ')}</Tag>,
+      render: (type: string) => (type ? <Tag color="blue">{type.replace(/_/g, ' ')}</Tag> : '-'),
     },
     {
       title: 'Entity',
       dataIndex: 'entity',
       key: 'entity',
       width: 150,
+      className: 'ol-mono',
     },
     {
       title: 'Feature',
@@ -291,6 +297,7 @@ const AIAnalytics: React.FC = () => {
       dataIndex: 'id',
       key: 'id',
       width: 120,
+      className: 'ol-mono',
     },
     {
       title: 'Name',
@@ -321,7 +328,7 @@ const AIAnalytics: React.FC = () => {
         return bestMatch ? (
           <div>
             <div>{bestMatch.name}</div>
-            <div style={{ fontSize: 12, color: '#666' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-color-tertiary)' }}>
               Similarity: {(bestMatch.similarity * 100).toFixed(1)}%
             </div>
           </div>
@@ -360,25 +367,28 @@ const AIAnalytics: React.FC = () => {
       dataIndex: 'id',
       key: 'id',
       width: 120,
+      className: 'ol-mono',
     },
     {
       title: 'Type',
       dataIndex: 'type',
       key: 'type',
       width: 150,
-      render: (type: string) => <Tag color="blue">{type.replace('_', ' ')}</Tag>,
+      render: (type: string) => (type ? <Tag color="blue">{type.replace(/_/g, ' ')}</Tag> : '-'),
     },
     {
       title: 'Node 1',
       dataIndex: 'node1',
       key: 'node1',
       width: 150,
+      className: 'ol-mono',
     },
     {
       title: 'Node 2',
       dataIndex: 'node2',
       key: 'node2',
       width: 150,
+      className: 'ol-mono',
     },
     {
       title: 'Score',
@@ -419,6 +429,7 @@ const AIAnalytics: React.FC = () => {
       dataIndex: 'id',
       key: 'id',
       width: 120,
+      className: 'ol-mono',
     },
     {
       title: 'Size',
@@ -643,31 +654,26 @@ const AIAnalytics: React.FC = () => {
   };
 
   return (
-    <div className="ai-analytics-page">
+    <div className="ol-page-body">
       {/* Page Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="page-header"
       >
-        <div>
-          <Title level={1}>
+        <PageHeader
+          icon={<RobotOutlined />}
+          title="AI Analytics"
+          subtitle="Advanced AI/ML-powered insights and predictions"
+          actions={(
             <Space>
-              <RobotOutlined />
-              AI Analytics
+              <RangePicker />
+              <Button icon={<SyncOutlined />} onClick={() => window.location.reload()}>
+                Refresh
+              </Button>
             </Space>
-          </Title>
-          <Paragraph type="secondary">
-            Advanced AI/ML-powered insights and predictions
-          </Paragraph>
-        </div>
-        <Space>
-          <RangePicker />
-          <Button icon={<SyncOutlined />} onClick={() => window.location.reload()}>
-            Refresh
-          </Button>
-        </Space>
+          )}
+        />
       </motion.div>
 
       {/* Quick Stats */}
@@ -676,47 +682,33 @@ const AIAnalytics: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
       >
-        <Row gutter={24}>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Total Anomalies"
-                value={anomalyResults.length}
-                prefix={<AlertOutlined style={{ color: '#f5222d' }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Entities Resolved"
-                value={entityResults.filter(e => e.resolved).length}
-                prefix={<TeamOutlined style={{ color: '#52c41a' }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Predictions"
-                value={predictionResults.length}
-                prefix={<ThunderboltOutlined style={{ color: '#faad14' }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card>
-              <Statistic
-                title="Clusters Found"
-                value={clusterResults.length}
-                prefix={<ClusterOutlined style={{ color: '#722ed1' }} />}
-              />
-            </Card>
-          </Col>
-        </Row>
+        <div className="ol-stats-grid">
+          <StatCard
+            label="Total Anomalies"
+            value={anomalyResults.length}
+            icon={<AlertOutlined />}
+            accent="error"
+          />
+          <StatCard
+            label="Entities Resolved"
+            value={entityResults.filter(e => e.resolved).length}
+            icon={<TeamOutlined />}
+            accent="success"
+          />
+          <StatCard
+            label="Predictions"
+            value={predictionResults.length}
+            icon={<ThunderboltOutlined />}
+            accent="warning"
+          />
+          <StatCard
+            label="Clusters Found"
+            value={clusterResults.length}
+            icon={<ClusterOutlined />}
+            accent="purple"
+          />
+        </div>
       </motion.div>
-
-      <Divider />
 
       {/* Main Tabs */}
       <motion.div
@@ -737,12 +729,17 @@ const AIAnalytics: React.FC = () => {
           onTabChange={setActiveTab}
         >
           {activeTab === 'anomalies' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>Anomaly Detection</Title>
-              
+            <div className="ol-section">
               {/* Controls */}
-              <Card size="small" style={{ marginBottom: 24 }}>
-                <Row gutter={24} align="middle">
+              <div
+                style={{
+                  padding: 16,
+                  border: '1px solid var(--border-color-secondary)',
+                  borderRadius: 8,
+                  background: 'var(--bg-color-secondary)',
+                }}
+              >
+                <Row gutter={16} align="middle">
                   <Col xs={24} lg={8}>
                     <Select
                       placeholder="Select detection method"
@@ -771,11 +768,11 @@ const AIAnalytics: React.FC = () => {
                     </Button>
                   </Col>
                 </Row>
-              </Card>
+              </div>
 
               {/* Chart */}
-              <Card title="Anomaly Scores Over Time" style={{ marginBottom: 24 }}>
-                <Line {...anomalyChartConfig} height={300} />
+              <Card title="Anomaly Scores Over Time">
+                <Line {...anomalyChartConfig} height={200} />
               </Card>
 
               {/* Results Table */}
@@ -785,7 +782,7 @@ const AIAnalytics: React.FC = () => {
                   dataSource={anomalyResults}
                   rowKey="id"
                   size="small"
-                  scroll={{ x: 1200 }}
+                  scroll={{ x: 1180 }}
                 />
               </Card>
 
@@ -855,12 +852,17 @@ const AIAnalytics: React.FC = () => {
           )}
 
           {activeTab === 'entities' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>Entity Resolution</Title>
-              
+            <div className="ol-section">
               {/* Controls */}
-              <Card size="small" style={{ marginBottom: 24 }}>
-                <Row gutter={24} align="middle">
+              <div
+                style={{
+                  padding: 16,
+                  border: '1px solid var(--border-color-secondary)',
+                  borderRadius: 8,
+                  background: 'var(--bg-color-secondary)',
+                }}
+              >
+                <Row gutter={16} align="middle">
                   <Col xs={24} lg={12}>
                     <Select
                       placeholder="Select resolution method"
@@ -889,11 +891,11 @@ const AIAnalytics: React.FC = () => {
                     </Button>
                   </Col>
                 </Row>
-              </Card>
+              </div>
 
               {/* Chart */}
-              <Card title="Entity Match Similarity" style={{ marginBottom: 24 }}>
-                <Column {...entityChartConfig} height={300} />
+              <Card title="Entity Match Similarity">
+                <Column {...entityChartConfig} height={200} />
               </Card>
 
               {/* Results Table */}
@@ -903,7 +905,7 @@ const AIAnalytics: React.FC = () => {
                   dataSource={entityResults}
                   rowKey="id"
                   size="small"
-                  scroll={{ x: 1200 }}
+                  scroll={{ x: 1180 }}
                 />
               </Card>
 
@@ -961,12 +963,17 @@ const AIAnalytics: React.FC = () => {
           )}
 
           {activeTab === 'predictions' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>Predictive Analytics</Title>
-              
+            <div className="ol-section">
               {/* Controls */}
-              <Card size="small" style={{ marginBottom: 24 }}>
-                <Row gutter={24} align="middle">
+              <div
+                style={{
+                  padding: 16,
+                  border: '1px solid var(--border-color-secondary)',
+                  borderRadius: 8,
+                  background: 'var(--bg-color-secondary)',
+                }}
+              >
+                <Row gutter={16} align="middle">
                   <Col xs={24} lg={12}>
                     <Select
                       placeholder="Select prediction method"
@@ -999,7 +1006,7 @@ const AIAnalytics: React.FC = () => {
                     </Button>
                   </Col>
                 </Row>
-              </Card>
+              </div>
 
               {/* Results Table */}
               <Card title="Prediction Results">
@@ -1008,19 +1015,24 @@ const AIAnalytics: React.FC = () => {
                   dataSource={predictionResults}
                   rowKey="id"
                   size="small"
-                  scroll={{ x: 1200 }}
+                  scroll={{ x: 1180 }}
                 />
               </Card>
             </div>
           )}
 
           {activeTab === 'clustering' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>Clustering</Title>
-              
+            <div className="ol-section">
               {/* Controls */}
-              <Card size="small" style={{ marginBottom: 24 }}>
-                <Row gutter={24} align="middle">
+              <div
+                style={{
+                  padding: 16,
+                  border: '1px solid var(--border-color-secondary)',
+                  borderRadius: 8,
+                  background: 'var(--bg-color-secondary)',
+                }}
+              >
+                <Row gutter={16} align="middle">
                   <Col xs={24} lg={12}>
                     <Select
                       placeholder="Select clustering method"
@@ -1049,11 +1061,11 @@ const AIAnalytics: React.FC = () => {
                     </Button>
                   </Col>
                 </Row>
-              </Card>
+              </div>
 
               {/* Chart */}
-              <Card title="Cluster Sizes" style={{ marginBottom: 24 }}>
-                <Bar {...clusterChartConfig} height={300} />
+              <Card title="Cluster Sizes">
+                <Bar {...clusterChartConfig} height={200} />
               </Card>
 
               {/* Results Table */}
@@ -1070,67 +1082,17 @@ const AIAnalytics: React.FC = () => {
           )}
 
           {activeTab === 'nlp' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>NLP Analysis</Title>
-              
-              {/* Controls */}
-              <Card size="small" style={{ marginBottom: 24 }}>
-                <Row gutter={24} align="middle">
-                  <Col xs={24} lg={18}>
-                    <Input.TextArea
-                      placeholder="Enter text to analyze..."
-                      rows={2}
-                      style={{ width: '100%' }}
-                    />
-                  </Col>
-                  <Col xs={24} lg={6}>
-                    <Button
-                      type="primary"
-                      icon={<FileTextOutlined />}
-                      loading={loading}
-                      block
-                    >
-                      Analyze Text
-                    </Button>
-                  </Col>
-                </Row>
-              </Card>
-
-              {/* Results Table */}
-              <Card title="NLP Analysis Results">
-                <Table
-                  columns={nlpColumns}
-                  dataSource={nlpResults}
-                  rowKey="id"
-                  size="small"
-                  scroll={{ x: 1200 }}
-                />
-              </Card>
-            </div>
+            <TabEmptyState
+              label="NLP Analysis"
+              description="Sentiment, topic, and entity extraction from free text will appear here once the NLP analysis endpoint is wired up."
+            />
           )}
 
           {activeTab === 'recommendations' && (
-            <div>
-              <Title level={4} style={{ marginBottom: 24 }}>AI Recommendations</Title>
-              
-              <Alert
-                message="These recommendations are generated based on AI analysis of your data"
-                type="info"
-                showIcon
-                style={{ marginBottom: 24 }}
-              />
-
-              {/* Results Table */}
-              <Card title="Recommendations">
-                <Table
-                  columns={recommendationColumns}
-                  dataSource={recommendationResults}
-                  rowKey="id"
-                  size="small"
-                  scroll={{ x: 1200 }}
-                />
-              </Card>
-            </div>
+            <TabEmptyState
+              label="Recommendations"
+              description="AI-generated recommendations based on your data will appear here once the recommendations endpoint is wired up."
+            />
           )}
         </Card>
       </motion.div>

@@ -33,6 +33,10 @@ interface ConnectedGraphVisualizationProps {
   refreshInterval?: number;
   showControls?: boolean;
   showStats?: boolean;
+  /** Set false when an embedding page renders its own title/subtitle/status. */
+  showHeader?: boolean;
+  /** Set false when an embedding page renders its own legend. */
+  showLegend?: boolean;
   onNodeClick?: (node: NodeData) => void;
   onEdgeClick?: (edge: EdgeData) => void;
   style?: React.CSSProperties;
@@ -45,6 +49,8 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
   refreshInterval = 30000,
   showControls = true,
   showStats = true,
+  showHeader = true,
+  showLegend = true,
   onNodeClick,
   onEdgeClick,
   style = {},
@@ -278,32 +284,37 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
       transition={{ duration: 0.5 }}
       style={style}
     >
-      <Card>
+      <Card
+        variant={showHeader ? 'outlined' : 'borderless'}
+        styles={showHeader ? undefined : { body: { padding: 0 } }}
+      >
         {/* Header */}
-        <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-          <Col>
-            <Title level={4} style={{ margin: 0 }}>
-              Graph Visualization
-            </Title>
-            <Text type="secondary">Real-time graph data from backend</Text>
-          </Col>
-          <Col>
-            <Space>
-              <Tooltip title="Refresh data">
-                <Button
-                  icon={<SyncOutlined spin={isLoading} />}
-                  onClick={refreshAll}
-                  loading={isLoading}
-                />
-              </Tooltip>
-              <Tooltip title="WebSocket status">
-                <Tag color={isConnected ? 'green' : 'red'}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
-                </Tag>
-              </Tooltip>
-            </Space>
-          </Col>
-        </Row>
+        {showHeader && (
+          <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+            <Col>
+              <Title level={4} style={{ margin: 0 }}>
+                Graph Visualization
+              </Title>
+              <Text type="secondary">Real-time graph data from backend</Text>
+            </Col>
+            <Col>
+              <Space>
+                <Tooltip title="Refresh data">
+                  <Button
+                    icon={<SyncOutlined spin={isLoading} />}
+                    onClick={refreshAll}
+                    loading={isLoading}
+                  />
+                </Tooltip>
+                <Tooltip title="WebSocket status">
+                  <Tag color={isConnected ? 'green' : 'red'}>
+                    {isConnected ? 'Connected' : 'Disconnected'}
+                  </Tag>
+                </Tooltip>
+              </Space>
+            </Col>
+          </Row>
+        )}
 
         {/* Stats */}
         {showStats && stats && (
@@ -474,6 +485,8 @@ const ConnectedGraphVisualization: React.FC<ConnectedGraphVisualizationProps> = 
             layout={layout}
             onNodeClick={handleNodeClick}
             onEdgeClick={handleEdgeClick}
+            showLegend={showLegend}
+            showToolbar={showHeader}
           />
         </Spin>
 

@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { Card, Tabs, Button, Space, Input, Select, Typography, Row, Col, Divider, Modal, Form, Spin, Alert, Tag, Tooltip, Drawer, message } from 'antd';
+import React, { useState, useCallback, useRef } from 'react';
+import { Card, Tabs, Button, Space, Input, Select, Typography, Divider, Modal, Form, Spin, Alert, Tag, Tooltip, Drawer, Table, message } from 'antd';
 import {
   ProjectOutlined,
   SearchOutlined,
@@ -25,6 +25,10 @@ import {
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import ConnectedGraphVisualization from '../components/ConnectedGraphVisualization';
+import StatCard from '../components/common/StatCard';
+import PageHeader from '../components/common/PageHeader';
+import LivePill from '../components/common/LivePill';
+import { useWebSocket as useWebSocketContext } from '../contexts/WebSocketContext';
 import {
   useGraphStats,
   useGraphNodes,
@@ -75,19 +79,36 @@ const GraphExplorer: React.FC = () => {
   const [layout, setLayout] = useState('cose');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(30000);
-  
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const canvasFrameRef = useRef<HTMLDivElement>(null);
+
   // Local storage for preferences
   const { value: savedLayout, setValue: saveLayout } = useLocalStorage('graph-layout', 'cose');
   const { value: savedAutoRefresh, setValue: saveAutoRefresh } = useLocalStorage('graph-auto-refresh', false);
   const { value: savedRefreshInterval, setValue: saveRefreshInterval } = useLocalStorage('graph-refresh-interval', 30000);
-  
+  const { value: savedActiveTab, setValue: saveActiveTab } = useLocalStorage('graph-active-tab', 'visualization');
+
   // Load saved preferences
   React.useEffect(() => {
     setLayout(savedLayout);
     setAutoRefresh(savedAutoRefresh);
     setRefreshInterval(savedRefreshInterval);
-  }, [savedLayout, savedAutoRefresh, savedRefreshInterval]);
-  
+    setActiveTab(savedActiveTab);
+  }, [savedLayout, savedAutoRefresh, savedRefreshInterval, savedActiveTab]);
+
+  const handleTabChange = useCallback((key: string) => {
+    setActiveTab(key);
+    saveActiveTab(key);
+  }, [saveActiveTab]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      canvasFrameRef.current?.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  }, []);
+
   // Debounced search
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
   
@@ -128,7 +149,7 @@ const GraphExplorer: React.FC = () => {
   const pathMutation = useGraphPath();
   
   // WebSocket for real-time updates
-  const { isConnected, messages, sendMessage } = useWebSocket(
+  const { messages, sendMessage } = useWebSocket(
     '/api/ws/graph',
     (data) => {
       if (data.type === 'graph_update') {
@@ -139,7 +160,11 @@ const GraphExplorer: React.FC = () => {
       }
     }
   );
-  
+
+  // Live/offline pill reads the shared websocket context directly - the
+  // adapter above is for message subscription, not connection status.
+  const { isConnected } = useWebSocketContext();
+
   // Available types
   const availableNodeTypes = React.useMemo(() => {
     const types = new Set<string>();
@@ -228,109 +253,106 @@ const GraphExplorer: React.FC = () => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <div className="ol-page-body">
         {/* Header */}
-        <Card>
-          <Row justify="space-between" align="middle">
-            <Col>
-              <Title level={2} style={{ margin: 0 }}>
-                <ProjectOutlined style={{ marginRight: 8 }} />
-                Graph Explorer
-              </Title>
-              <Text type="secondary">Real-time graph analytics and visualization</Text>
-            </Col>
-            <Col>
-              <Space>
-                <Tooltip title="Refresh all data">
-                  <Button
-                    icon={<SyncOutlined spin={isLoading} />}
-                    onClick={refreshAll}
-                    loading={isLoading}
-                  />
-                </Tooltip>
-                <Tooltip title="WebSocket status">
-                  <Tag color={isConnected ? 'green' : 'red'}>
-                    {isConnected ? 'Live' : 'Disconnected'}
-                  </Tag>
-                </Tooltip>
+        <PageHeader
+          icon={<ProjectOutlined />}
+          title="Graph Explorer"
+          subtitle="Real-time graph analytics and visualization"
+          actions={
+            <>
+              <LivePill connected={isConnected} />
+              <Tooltip title="Refresh all data">
                 <Button
-                  icon={<SettingOutlined />}
-                  onClick={() => setSettingsVisible(true)}
+                  icon={<SyncOutlined spin={isLoading} />}
+                  onClick={refreshAll}
+                  loading={isLoading}
                 />
-              </Space>
-            </Col>
-          </Row>
-        </Card>
+              </Tooltip>
+              <Tooltip title="Graph settings">
+                <button
+                  type="button"
+                  className="ol-icon-btn"
+                  onClick={() => setSettingsVisible(true)}
+                >
+                  <SettingOutlined />
+                </button>
+              </Tooltip>
+            </>
+          }
+        />
 
         {/* Stats Overview */}
-        <Row gutter={16}>
-          <Col span={6}>
-            <Card>
-              <Title level={4} style={{ margin: 0 }}>
-                <DatabaseOutlined style={{ marginRight: 8 }} />
-                Total Nodes
-              </Title>
-              <Title level={2} style={{ margin: '16px 0 0' }}>
-                {totalNodes.toLocaleString()}
-              </Title>
-              <Text type="secondary">
+        <div className="ol-stats-grid">
+          <StatCard
+            label="Total Nodes"
+            value={totalNodes.toLocaleString()}
+            icon={<DatabaseOutlined />}
+            accent="primary"
+            minHeight={132}
+            loading={statsLoading && !stats}
+            footer={
+              <Space wrap size={[4, 4]}>
                 {Object.entries(nodeTypeCounts).map(([type, count]) => (
-                  <Tag key={type} style={{ margin: '4px 4px 4px 0' }}>
+                  <Tag key={type} color={getNodeColor(type)} style={{ margin: 0 }}>
                     {type}: {count}
                   </Tag>
                 ))}
-              </Text>
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
-              <Title level={4} style={{ margin: 0 }}>
-                <BranchesOutlined style={{ marginRight: 8 }} />
-                Total Edges
-              </Title>
-              <Title level={2} style={{ margin: '16px 0 0' }}>
-                {totalEdges.toLocaleString()}
-              </Title>
-              <Text type="secondary">
+              </Space>
+            }
+          />
+          <StatCard
+            label="Total Edges"
+            value={totalEdges.toLocaleString()}
+            icon={<BranchesOutlined />}
+            accent="success"
+            minHeight={132}
+            loading={statsLoading && !stats}
+            footer={
+              <Space wrap size={[4, 4]}>
                 {Object.entries(edgeTypeCounts).map(([type, count]) => (
-                  <Tag key={type} style={{ margin: '4px 4px 4px 0' }}>
+                  <Tag key={type} color={getEdgeColor(type)} style={{ margin: 0 }}>
                     {type}: {count}
                   </Tag>
                 ))}
-              </Text>
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
-              <Title level={4} style={{ margin: 0 }}>
-                <NodeIndexOutlined style={{ marginRight: 8 }} />
-                Node Types
-              </Title>
-              <Title level={2} style={{ margin: '16px 0 0' }}>
-                {availableNodeTypes.length}
-              </Title>
-              <Text type="secondary">
-                {availableNodeTypes.slice(0, 5).join(', ')}
-                {availableNodeTypes.length > 5 && '...'}
-              </Text>
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
-              <Title level={4} style={{ margin: 0 }}>
-                <ClusterOutlined style={{ marginRight: 8 }} />
-                Edge Types
-              </Title>
-              <Title level={2} style={{ margin: '16px 0 0' }}>
-                {availableEdgeTypes.length}
-              </Title>
-              <Text type="secondary">
-                {availableEdgeTypes.slice(0, 5).join(', ')}
-                {availableEdgeTypes.length > 5 && '...'}
-              </Text>
-            </Card>
-          </Col>
-        </Row>
+              </Space>
+            }
+          />
+          <StatCard
+            label="Node Types"
+            value={availableNodeTypes.length}
+            icon={<NodeIndexOutlined />}
+            accent="purple"
+            minHeight={132}
+            loading={nodesLoading && nodes.length === 0}
+            footer={
+              <Space wrap size={[4, 4]}>
+                {availableNodeTypes.map((type) => (
+                  <Tag key={type} color={getNodeColor(type)} style={{ margin: 0 }}>
+                    {type}
+                  </Tag>
+                ))}
+              </Space>
+            }
+          />
+          <StatCard
+            label="Edge Types"
+            value={availableEdgeTypes.length}
+            icon={<ClusterOutlined />}
+            accent="warning"
+            minHeight={132}
+            loading={edgesLoading && edges.length === 0}
+            footer={
+              <Space wrap size={[4, 4]}>
+                {availableEdgeTypes.map((type) => (
+                  <Tag key={type} color={getEdgeColor(type)} style={{ margin: 0 }}>
+                    {type}
+                  </Tag>
+                ))}
+              </Space>
+            }
+          />
+        </div>
 
         {/* Error Alert */}
         {hasError && (
@@ -347,23 +369,163 @@ const GraphExplorer: React.FC = () => {
         <Card>
           <Tabs
             activeKey={activeTab}
-            onChange={setActiveTab}
+            onChange={handleTabChange}
             items={[
               {
                 key: 'visualization',
                 label: 'Visualization',
                 icon: <EyeOutlined />,
                 children: (
-                  <ConnectedGraphVisualization
-                    height="700px"
-                    layout={layout}
-                    autoRefresh={autoRefresh}
-                    refreshInterval={refreshInterval}
-                    showControls={true}
-                    showStats={false}
-                    onNodeClick={handleNodeClick}
-                    onEdgeClick={handleEdgeClick}
-                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Toolbar */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <Input
+                        placeholder="Search nodes..."
+                        prefix={<SearchOutlined />}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{ width: 220 }}
+                        allowClear
+                      />
+                      <Select
+                        value={layout}
+                        onChange={(value) => {
+                          setLayout(value);
+                          saveLayout(value);
+                        }}
+                        style={{ width: 160 }}
+                      >
+                        <Option value="cose">CoSE</Option>
+                        <Option value="circle">Circle</Option>
+                        <Option value="grid">Grid</Option>
+                        <Option value="random">Random</Option>
+                        <Option value="dagre">Dagre</Option>
+                        <Option value="breadthfirst">Breadthfirst</Option>
+                        <Option value="fcose">Fcose</Option>
+                      </Select>
+                      <div style={{ flex: 1 }} />
+                      <Space size={8}>
+                        <Tooltip title="Zoom in">
+                          <button
+                            type="button"
+                            className="ol-icon-btn"
+                            onClick={() => setZoomLevel((z) => Math.min(200, z + 10))}
+                          >
+                            <ZoomInOutlined />
+                          </button>
+                        </Tooltip>
+                        <Tooltip title="Zoom out">
+                          <button
+                            type="button"
+                            className="ol-icon-btn"
+                            onClick={() => setZoomLevel((z) => Math.max(25, z - 10))}
+                          >
+                            <ZoomOutOutlined />
+                          </button>
+                        </Tooltip>
+                        <Tooltip title="Fullscreen">
+                          <button type="button" className="ol-icon-btn" onClick={toggleFullscreen}>
+                            <FullscreenOutlined />
+                          </button>
+                        </Tooltip>
+                        <Tooltip title="Export as JSON">
+                          <button
+                            type="button"
+                            className="ol-icon-btn"
+                            onClick={() => exportGraph('json')}
+                          >
+                            <ExportOutlined />
+                          </button>
+                        </Tooltip>
+                      </Space>
+                    </div>
+
+                    {/* Canvas */}
+                    <div
+                      ref={canvasFrameRef}
+                      style={{
+                        position: 'relative',
+                        height: 560,
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 12,
+                        background: 'var(--bg-color-secondary)',
+                      }}
+                    >
+                      <div style={{ position: 'absolute', inset: 0, overflow: 'auto', borderRadius: 12 }}>
+                        <ConnectedGraphVisualization
+                          height={420}
+                          layout={layout}
+                          autoRefresh={autoRefresh}
+                          refreshInterval={refreshInterval}
+                          showControls={false}
+                          showStats={false}
+                          showHeader={false}
+                          showLegend={false}
+                          onNodeClick={handleNodeClick}
+                          onEdgeClick={handleEdgeClick}
+                        />
+                      </div>
+
+                      {/* Stats strip */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 12,
+                          right: 16,
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          background: 'var(--card-bg)',
+                          border: '1px solid var(--border-color-secondary)',
+                          fontSize: 12,
+                          color: 'var(--text-color-secondary)',
+                          boxShadow: '0 2px 8px var(--shadow-color)',
+                        }}
+                      >
+                        {nodes.length.toLocaleString()} nodes shown · {edges.length.toLocaleString()} edges · {zoomLevel}% zoom
+                      </div>
+
+                      {/* Legend */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: 12,
+                          left: 14,
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          background: 'var(--card-bg)',
+                          boxShadow: '0 2px 8px var(--shadow-color)',
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-color)' }}>
+                          Legend
+                        </div>
+                        <Space direction="vertical" size={4}>
+                          {['person', 'company', 'email', 'ip', 'domain'].map((type) => (
+                            <Space key={type} size={6}>
+                              <span
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: '50%',
+                                  background: getNodeColor(type),
+                                  display: 'inline-block',
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  color: 'var(--text-color-secondary)',
+                                  textTransform: 'capitalize',
+                                }}
+                              >
+                                {type}
+                              </span>
+                            </Space>
+                          ))}
+                        </Space>
+                      </div>
+                    </div>
+                  </div>
                 ),
               },
               {
@@ -371,64 +533,95 @@ const GraphExplorer: React.FC = () => {
                 label: 'Data Table',
                 icon: <DatabaseOutlined />,
                 children: (
-                  <Card>
-                    <Title level={4}>Nodes ({nodes.length})</Title>
-                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
-                      {nodes.map(node => (
-                        <Card
-                          key={node.id}
-                          size="small"
-                          style={{ marginBottom: 8, cursor: 'pointer' }}
-                          onClick={() => handleNodeClick(node)}
-                        >
-                          <Row>
-                            <Col span={4}>
-                              <Tag color={getNodeColor(node.type)}>
-                                {node.type || 'unknown'}
-                              </Tag>
-                            </Col>
-                            <Col span={16}>
-                              <Text strong>{node.label || node.id}</Text>
-                            </Col>
-                            <Col span={4} style={{ textAlign: 'right' }}>
-                              <Button size="small" icon={<EyeOutlined />} />
-                            </Col>
-                          </Row>
-                        </Card>
-                      ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    <div className="ol-section">
+                      <Title level={5} className="ol-section-title">
+                        Nodes ({totalNodes.toLocaleString()} · showing {nodes.length.toLocaleString()})
+                      </Title>
+                      <Table
+                        rowKey="id"
+                        dataSource={nodes}
+                        loading={nodesLoading}
+                        scroll={{ x: 640 }}
+                        columns={[
+                          {
+                            title: 'Type',
+                            dataIndex: 'type',
+                            key: 'type',
+                            width: 120,
+                            render: (type?: string) => (
+                              <Tag color={getNodeColor(type)}>{type || 'unknown'}</Tag>
+                            ),
+                          },
+                          {
+                            title: 'Label',
+                            dataIndex: 'label',
+                            key: 'label',
+                            render: (label: string, record: NodeData) => (
+                              <Text strong>{label || record.id}</Text>
+                            ),
+                          },
+                          {
+                            title: 'ID',
+                            dataIndex: 'id',
+                            key: 'id',
+                            render: (id: string) => <span className="ol-mono">{id}</span>,
+                          },
+                          {
+                            title: '',
+                            key: 'actions',
+                            width: 60,
+                            render: (_: unknown, record: NodeData) => (
+                              <Button size="small" icon={<EyeOutlined />} onClick={() => handleNodeClick(record)} />
+                            ),
+                          },
+                        ]}
+                      />
                     </div>
-                    
-                    <Divider />
-                    
-                    <Title level={4}>Edges ({edges.length})</Title>
-                    <div style={{ maxHeight: 400, overflow: 'auto' }}>
-                      {edges.map(edge => (
-                        <Card
-                          key={edge.id}
-                          size="small"
-                          style={{ marginBottom: 8, cursor: 'pointer' }}
-                          onClick={() => handleEdgeClick(edge)}
-                        >
-                          <Row>
-                            <Col span={6}>
-                              <Text code>{edge.source}</Text>
-                            </Col>
-                            <Col span={2} style={{ textAlign: 'center' }}>
-                              <Tag color={getEdgeColor(edge.type)}>
-                                {edge.type || 'unknown'}
-                              </Tag>
-                            </Col>
-                            <Col span={6}>
-                              <Text code>{edge.target}</Text>
-                            </Col>
-                            <Col span={10}>
-                              <Text type="secondary">{edge.type}</Text>
-                            </Col>
-                          </Row>
-                        </Card>
-                      ))}
+
+                    <div className="ol-section">
+                      <Title level={5} className="ol-section-title">
+                        Edges ({totalEdges.toLocaleString()} · showing {edges.length.toLocaleString()})
+                      </Title>
+                      <Table
+                        rowKey="id"
+                        dataSource={edges}
+                        loading={edgesLoading}
+                        scroll={{ x: 520 }}
+                        columns={[
+                          {
+                            title: 'Source',
+                            dataIndex: 'source',
+                            key: 'source',
+                            render: (source: string) => <span className="ol-mono">{source}</span>,
+                          },
+                          {
+                            title: 'Type',
+                            dataIndex: 'type',
+                            key: 'type',
+                            width: 120,
+                            render: (type?: string) => (
+                              <Tag color={getEdgeColor(type)}>{type || 'unknown'}</Tag>
+                            ),
+                          },
+                          {
+                            title: 'Target',
+                            dataIndex: 'target',
+                            key: 'target',
+                            render: (target: string) => <span className="ol-mono">{target}</span>,
+                          },
+                          {
+                            title: '',
+                            key: 'actions',
+                            width: 60,
+                            render: (_: unknown, record: EdgeData) => (
+                              <Button size="small" icon={<EyeOutlined />} onClick={() => handleEdgeClick(record)} />
+                            ),
+                          },
+                        ]}
+                      />
                     </div>
-                  </Card>
+                  </div>
                 ),
               },
               {
@@ -436,89 +629,94 @@ const GraphExplorer: React.FC = () => {
                 label: 'Analysis',
                 icon: <NodeIndexOutlined />,
                 children: (
-                  <Card>
-                    <Title level={4}>Graph Analysis Tools</Title>
-                    <Paragraph>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    <Paragraph type="secondary" style={{ margin: 0 }}>
                       Perform advanced graph analysis using the backend AI/ML modules.
                     </Paragraph>
-                    
-                    <Space direction="vertical">
-                      <Card title="Centrality Analysis">
+
+                    <div className="ol-row-2up">
+                      <Card title="Centrality Analysis" className="ol-subcard">
                         <Text>
                           Calculate centrality metrics to identify the most important nodes in your graph.
                         </Text>
-                        <Button
-                          type="primary"
-                          style={{ marginTop: 16 }}
-                          onClick={async () => {
-                            try {
-                              const result = await centralityMutation.mutateAsync({
-                                algorithm: 'degree',
-                                limit: 10,
-                              });
-                              message.success('Centrality analysis completed');
-                            } catch (error) {
-                              message.error('Centrality analysis failed');
-                            }
-                          }}
-                        >
-                          Run Centrality Analysis
-                        </Button>
+                        <div>
+                          <Button
+                            type="primary"
+                            style={{ marginTop: 16 }}
+                            loading={centralityMutation.isLoading}
+                            onClick={async () => {
+                              try {
+                                await centralityMutation.mutateAsync({
+                                  algorithm: 'degree',
+                                  limit: 10,
+                                });
+                                message.success('Centrality analysis completed');
+                              } catch (error) {
+                                message.error('Centrality analysis failed');
+                              }
+                            }}
+                          >
+                            Run Centrality Analysis
+                          </Button>
+                        </div>
                       </Card>
-                      
-                      <Card title="Community Detection">
+
+                      <Card title="Community Detection" className="ol-subcard">
                         <Text>
                           Detect communities or clusters within your graph to identify groups of related entities.
                         </Text>
-                        <Button
-                          type="primary"
-                          style={{ marginTop: 16 }}
-                          onClick={async () => {
-                            try {
-                              const result = await communitiesMutation.mutateAsync({
-                                algorithm: 'louvain',
-                                resolution: 1.0,
-                              });
-                              message.success('Community detection completed');
-                            } catch (error) {
-                              message.error('Community detection failed');
-                            }
-                          }}
+                        <div>
+                          <Button
+                            type="primary"
+                            style={{ marginTop: 16 }}
+                            loading={communitiesMutation.isLoading}
+                            onClick={async () => {
+                              try {
+                                await communitiesMutation.mutateAsync({
+                                  algorithm: 'louvain',
+                                  resolution: 1.0,
+                                });
+                                message.success('Community detection completed');
+                              } catch (error) {
+                                message.error('Community detection failed');
+                              }
+                            }}
+                          >
+                            Detect Communities
+                          </Button>
+                        </div>
+                      </Card>
+                    </div>
+
+                    <Card title="Path Finding" className="ol-subcard">
+                      <Text>
+                        Find paths between nodes to understand relationships and connections.
+                      </Text>
+                      <Space style={{ marginTop: 16 }} wrap>
+                        <Select
+                          placeholder="Start node"
+                          style={{ width: 200 }}
                         >
-                          Detect Communities
-                        </Button>
-                      </Card>
-                      
-                      <Card title="Path Finding">
-                        <Text>
-                          Find paths between nodes to understand relationships and connections.
-                        </Text>
-                        <Space style={{ marginTop: 16 }}>
-                          <Select
-                            placeholder="Start node"
-                            style={{ width: 200 }}
-                          >
-                            {nodes.slice(0, 50).map(node => (
-                              <Option key={node.id} value={node.id}>
-                                {node.label || node.id}
-                              </Option>
-                            ))}
-                          </Select>
-                          <Select
-                            placeholder="End node"
-                            style={{ width: 200 }}
-                          >
-                            {nodes.slice(0, 50).map(node => (
-                              <Option key={node.id} value={node.id}>
-                                {node.label || node.id}
-                              </Option>
-                            ))}
-                          </Select>
-                          <Button type="primary">Find Path</Button>
-                        </Space>
-                      </Card>
-                    </Space>
-                  </Card>
+                          {nodes.slice(0, 50).map(node => (
+                            <Option key={node.id} value={node.id}>
+                              {node.label || node.id}
+                            </Option>
+                          ))}
+                        </Select>
+                        <Select
+                          placeholder="End node"
+                          style={{ width: 200 }}
+                        >
+                          {nodes.slice(0, 50).map(node => (
+                            <Option key={node.id} value={node.id}>
+                              {node.label || node.id}
+                            </Option>
+                          ))}
+                        </Select>
+                        <Button type="primary">Find Path</Button>
+                      </Space>
+                    </Card>
+                  </div>
                 ),
               },
             ]}
@@ -692,22 +890,21 @@ const GraphExplorer: React.FC = () => {
             </Card>
           </Space>
         </Drawer>
-      </Space>
+      </div>
     </motion.div>
   );
-  
+
   // Helper functions
   function getNodeColor(type: string | undefined): string {
     const colors: Record<string, string> = {
-      person: 'blue',
-      company: 'green',
-      email: 'orange',
-      ip: 'red',
-      domain: 'purple',
-      url: 'volcano',
-      default: 'default',
+      person: '#1890ff',
+      company: '#52c41a',
+      email: '#faad14',
+      ip: '#f5222d',
+      domain: '#722ed1',
+      default: '#8c8c8c',
     };
-    return colors[type || 'default'];
+    return colors[type || 'default'] ?? colors.default;
   }
   
   function getEdgeColor(type: string | undefined): string {

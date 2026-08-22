@@ -1,225 +1,210 @@
 import React from 'react';
-import { Card, Typography, Row, Col, Divider, Form, Input, Button, Switch, Select, Alert } from 'antd';
-import { SettingOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons';
+import { Card, Typography, Form, Input, Button, Switch, Select } from 'antd';
+import { SettingOutlined, SaveOutlined, SyncOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
+import PageHeader from '../components/common/PageHeader';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 const Settings: React.FC = () => {
   return (
-    <div className="settings-page">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="page-header">
-        <div>
-          <Title level={1}><SettingOutlined /> Settings</Title>
-          <Paragraph type="secondary">Configure your OpenLens platform</Paragraph>
-        </div>
+    <div className="ol-page-body">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+        <PageHeader
+          icon={<SettingOutlined />}
+          title="Settings"
+          subtitle="Configure your OpenLens platform"
+        />
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}>
-        <Row gutter={24}>
-          <Col xs={24} lg={12}>
-            <Card title="General Settings">
-              <Form layout="vertical">
-                <Form.Item label="Platform Name">
-                  <Input placeholder="OpenLens" />
-                </Form.Item>
-                <Form.Item label="Description">
-                  <Input.TextArea placeholder="Enterprise-Grade OSINT Platform" rows={3} />
-                </Form.Item>
-                <Form.Item label="Default Language">
-                  <Select options={[{ label: 'English', value: 'en' }]} />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
-                    Save Settings
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title="Appearance">
-              <Form layout="vertical">
-                <Form.Item label="Theme">
-                  <Select options={[
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+        className="ol-page-body"
+      >
+        <div className="ol-row-2up">
+          <Card title="General Settings">
+            <Form layout="vertical" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Form.Item label="Platform Name" style={{ marginBottom: 0 }}>
+                <Input placeholder="OpenLens" style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item label="Description" style={{ marginBottom: 0 }}>
+                <Input.TextArea placeholder="Enterprise-Grade OSINT Platform" rows={3} />
+              </Form.Item>
+              <Form.Item label="Default Language" style={{ marginBottom: 0 }}>
+                <Select options={[{ label: 'English', value: 'en' }]} style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
+                  Save Settings
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+
+          <Card title="Appearance">
+            <Form layout="vertical" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Form.Item label="Theme" style={{ marginBottom: 0 }}>
+                <Select
+                  options={[
                     { label: 'System Default', value: 'system' },
                     { label: 'Light', value: 'light' },
                     { label: 'Dark', value: 'dark' },
-                  ]} />
-                </Form.Item>
-                <Form.Item label="Primary Color">
-                  <Input type="color" defaultValue="#1890ff" />
-                </Form.Item>
-                <Form.Item label="Enable Animations" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
-                    Save Appearance
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Card>
-          </Col>
-        </Row>
+                  ]}
+                  style={{ height: 32 }}
+                />
+              </Form.Item>
+              <Form.Item label="Primary Color" style={{ marginBottom: 0 }}>
+                <Input type="color" defaultValue="#1890ff" style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item label="Enable Animations" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch defaultChecked />
+              </Form.Item>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
+                  Save Appearance
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
 
-        <Divider />
+          <Card title="API Settings">
+            <Form layout="vertical" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Form.Item label="API Base URL" style={{ marginBottom: 0 }}>
+                <Input placeholder="http://localhost:8000" style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item label="Timeout (seconds)" style={{ marginBottom: 0 }}>
+                <Input type="number" defaultValue={30} style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item label="Enable Caching" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch defaultChecked />
+              </Form.Item>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
+                  Save API Settings
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
 
-        <Row gutter={24}>
-          <Col xs={24} lg={12}>
-            <Card title="API Settings">
-              <Form layout="vertical">
-                <Form.Item label="API Base URL">
-                  <Input placeholder="http://localhost:8000" />
-                </Form.Item>
-                <Form.Item label="Timeout (seconds)">
-                  <Input type="number" defaultValue={30} />
-                </Form.Item>
-                <Form.Item label="Enable Caching" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
-                    Save API Settings
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title="Security Settings">
-              <Form layout="vertical">
-                <Form.Item label="Session Timeout (minutes)">
-                  <Input type="number" defaultValue={30} />
-                </Form.Item>
-                <Form.Item label="Max Login Attempts">
-                  <Input type="number" defaultValue={5} />
-                </Form.Item>
-                <Form.Item label="Enable 2FA" valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
-                    Save Security Settings
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Card>
-          </Col>
-        </Row>
+          <Card title="Security Settings">
+            <Form layout="vertical" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Form.Item label="Session Timeout (minutes)" style={{ marginBottom: 0 }}>
+                <Input type="number" defaultValue={30} style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item label="Max Login Attempts" style={{ marginBottom: 0 }}>
+                <Input type="number" defaultValue={5} style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item label="Enable 2FA" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch />
+              </Form.Item>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
+                  Save Security Settings
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
 
-        <Divider />
-
-        <Row gutter={24}>
-          <Col xs={24} lg={12}>
-            <Card title="Notification Settings">
-              <Form layout="vertical">
-                <Form.Item label="Email Notifications" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item label="Desktop Notifications" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item label="Alert Severity Threshold">
-                  <Select options={[
+          <Card title="Notification Settings">
+            <Form layout="vertical" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Form.Item label="Email Notifications" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch defaultChecked />
+              </Form.Item>
+              <Form.Item label="Desktop Notifications" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch defaultChecked />
+              </Form.Item>
+              <Form.Item label="Alert Severity Threshold" style={{ marginBottom: 0 }}>
+                <Select
+                  options={[
                     { label: 'All', value: 'all' },
                     { label: 'High and Critical', value: 'high' },
                     { label: 'Critical Only', value: 'critical' },
-                  ]} />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
-                    Save Notification Settings
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title="Data Settings">
-              <Form layout="vertical">
-                <Form.Item label="Auto-Update Feeds" valuePropName="checked">
-                  <Switch defaultChecked />
-                </Form.Item>
-                <Form.Item label="Update Frequency">
-                  <Select options={[
+                  ]}
+                  style={{ height: 32 }}
+                />
+              </Form.Item>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
+                  Save Notification Settings
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+
+          <Card title="Data Settings">
+            <Form layout="vertical" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Form.Item label="Auto-Update Feeds" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch defaultChecked />
+              </Form.Item>
+              <Form.Item label="Update Frequency" style={{ marginBottom: 0 }}>
+                <Select
+                  options={[
                     { label: 'Hourly', value: 'hourly' },
                     { label: 'Daily', value: 'daily' },
                     { label: 'Weekly', value: 'weekly' },
-                  ]} />
-                </Form.Item>
-                <Form.Item label="Data Retention (days)">
-                  <Input type="number" defaultValue={90} />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
-                    Save Data Settings
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Card>
-          </Col>
-        </Row>
+                  ]}
+                  style={{ height: 32 }}
+                />
+              </Form.Item>
+              <Form.Item label="Data Retention (days)" style={{ marginBottom: 0 }}>
+                <Input type="number" defaultValue={90} style={{ height: 32 }} />
+              </Form.Item>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
+                  Save Data Settings
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        </div>
 
-        <Divider />
-
-        <Card title="System Information">
-          <Row gutter={24}>
-            <Col xs={24} sm={12} lg={6}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <Text>Version:</Text>
+        <div className="ol-section">
+          <div className="ol-section-title">System Information</div>
+          <Card>
+            <div className="ol-row-quarter">
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-color-secondary)' }}>
+                <Text type="secondary">Version</Text>
                 <Text strong>7.0.0</Text>
               </div>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <Text>Build:</Text>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-color-secondary)' }}>
+                <Text type="secondary">Build</Text>
                 <Text strong>20240115</Text>
               </div>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <Text>License:</Text>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-color-secondary)' }}>
+                <Text type="secondary">License</Text>
                 <Text strong>Enterprise</Text>
               </div>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0' }}>
-                <Text>Support:</Text>
-                <Text strong>Until 2025-01-15</Text>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-color-secondary)' }}>
+                <Text type="secondary">Support</Text>
+                <Text strong>Until 2027-08-21</Text>
               </div>
-            </Col>
-          </Row>
-        </Card>
+            </div>
+          </Card>
+        </div>
 
-        <Divider />
-
-        <Card title="Danger Zone">
-          <Alert
-            message="These actions are irreversible. Please proceed with caution."
-            type="warning"
-            showIcon
-            style={{ marginBottom: 24 }}
-          />
-          <Row gutter={24}>
-            <Col xs={24} lg={12}>
-              <Card title="Reset Settings" size="small">
-                <Paragraph type="secondary">Reset all settings to default values</Paragraph>
-                <Button danger block icon={<SyncOutlined />}>
-                  Reset All Settings
-                </Button>
-              </Card>
-            </Col>
-            <Col xs={24} lg={12}>
-              <Card title="Clear Data" size="small">
-                <Paragraph type="secondary">Permanently delete all data</Paragraph>
-                <Button danger block icon={<SyncOutlined />}>
-                  Clear All Data
-                </Button>
-              </Card>
-            </Col>
-          </Row>
-        </Card>
+        <div className="ol-section">
+          <div className="ol-section-title">Danger Zone</div>
+          <div className="ol-warning-banner">
+            <ExclamationCircleOutlined />
+            <span>These actions are irreversible. Please proceed with caution.</span>
+          </div>
+          <div className="ol-row-2up" style={{ marginTop: 16 }}>
+            <Card size="small" title="Reset Settings" className="ol-subcard">
+              <Paragraph type="secondary">Reset all settings to default values</Paragraph>
+              <Button danger block icon={<SyncOutlined />}>
+                Reset All Settings
+              </Button>
+            </Card>
+            <Card size="small" title="Clear Data" className="ol-subcard">
+              <Paragraph type="secondary">Permanently delete all data</Paragraph>
+              <Button danger block icon={<SyncOutlined />}>
+                Clear All Data
+              </Button>
+            </Card>
+          </div>
+        </div>
       </motion.div>
     </div>
   );

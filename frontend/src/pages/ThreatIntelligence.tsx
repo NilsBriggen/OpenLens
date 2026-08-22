@@ -24,7 +24,7 @@ import {
   CloseCircleOutlined
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { Line, Bar, Pie } from '@ant-design/plots';
+import { Line, Pie } from '@ant-design/plots';
 import {
   useThreatFeeds,
   useIOCs,
@@ -36,8 +36,13 @@ import {
   useWebSocket
 } from '../hooks/useApi';
 import { useDebounce, useLocalStorage } from '../hooks/useApi';
+import { useWebSocket as useWebSocketConnection } from '../contexts/WebSocketContext';
 import type { ThreatFeed, IOC, Alert as ThreatAlert } from '../types/api';
 import { exportToCSV, exportToJSON, exportToSTIX } from '../utils/exportUtils';
+import StatCard from '../components/common/StatCard';
+import PageHeader from '../components/common/PageHeader';
+import LivePill from '../components/common/LivePill';
+import BarList from '../components/common/BarList';
 
 const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
@@ -46,7 +51,7 @@ const { RangePicker } = DatePicker;
 
 const ThreatIntelligence: React.FC = () => {
   // State
-  const [activeTab, setActiveTab] = useState('feeds');
+  const { value: activeTab, setValue: setActiveTab } = useLocalStorage('threat-active-tab', 'feeds');
   const [feedFormVisible, setFeedFormVisible] = useState(false);
   const [iocFormVisible, setIocFormVisible] = useState(false);
   const [alertFormVisible, setAlertFormVisible] = useState(false);
@@ -125,7 +130,7 @@ const ThreatIntelligence: React.FC = () => {
   const stixImportMutation = useStixImport();
   
   // WebSocket for real-time updates
-  const { isConnected, messages } = useWebSocket(
+  useWebSocket(
     '/api/ws/threat',
     (data) => {
       if (data.type === 'threat_update') {
@@ -136,6 +141,7 @@ const ThreatIntelligence: React.FC = () => {
       }
     }
   );
+  const { isConnected } = useWebSocketConnection();
   
   // Refresh all
   const refreshAll = useCallback(() => {
@@ -203,13 +209,24 @@ const ThreatIntelligence: React.FC = () => {
   };
 
   const getSeverityTag = (severity: string) => {
-    const colors = { critical: 'error', high: 'warning', medium: 'warning', low: 'success', info: 'info' };
+    const colors = { critical: 'error', high: 'warning', medium: 'warning', low: 'success', info: 'blue' };
     return <Tag color={colors[severity as keyof typeof colors] || 'default'}>{severity}</Tag>;
   };
 
   const getIOCTypeColor = (type: string) => {
     const colors = { ip: '#1890ff', domain: '#52c41a', url: '#faad14', hash: '#f5222d', email: '#722ed1' };
     return colors[type as keyof typeof colors] || '#d9d9d9';
+  };
+
+  const getSeverityColor = (severity: string) => {
+    const colors: Record<string, string> = {
+      critical: 'var(--error-color)',
+      high: 'var(--warning-color)',
+      medium: 'var(--warning-color)',
+      low: 'var(--success-color)',
+      info: 'var(--primary-color)',
+    };
+    return colors[severity] || 'var(--text-color-tertiary)';
   };
 
   const getIOCTypeIcon = (type: string) => {
@@ -276,7 +293,21 @@ const ThreatIntelligence: React.FC = () => {
       render: (value: string, record: IOC) => (
         <Space>
           {getIOCTypeIcon(record.iocType)}
-          <Text code>{value}</Text>
+          <Tooltip title={value}>
+            <span
+              className="ol-mono"
+              style={{
+                display: 'inline-block',
+                maxWidth: 260,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                verticalAlign: 'middle',
+              }}
+            >
+              {value}
+            </span>
+          </Tooltip>
         </Space>
       ),
     },
@@ -355,7 +386,7 @@ const ThreatIntelligence: React.FC = () => {
 
   // Stats
   const totalFeeds = feeds.length;
-  const activeFeeds = feeds.filter(f => f.status === 'success').length;
+  const activeFeeds = feeds.filter(f => f.status === 'active').length;
   const totalIOCs = iocs.length;
   const criticalIOCs = iocs.filter(i => i.severity === 'critical').length;
   const highIOCs = iocs.filter(i => i.severity === 'high').length;
@@ -394,102 +425,74 @@ const ThreatIntelligence: React.FC = () => {
   const hasError = feedsError || iocsError || alertsError || rulesError;
   
   return (
-    <div className="threat-intelligence-page">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="page-header">
-        <div>
-          <Title level={1}><Space><AlertOutlined />Threat Intelligence</Space></Title>
-          <Paragraph type="secondary">Real-time threat intelligence and analysis</Paragraph>
-        </div>
-        <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setFeedFormVisible(true)}>
-            Add Feed
-          </Button>
-          <Button icon={<SyncOutlined spin={isLoading} />} onClick={refreshAll} loading={isLoading}>
-            Refresh
-          </Button>
-          <Tooltip title="WebSocket status">
-            <Tag color={isConnected ? 'green' : 'red'}>
-              {isConnected ? 'Live' : 'Disconnected'}
-            </Tag>
-          </Tooltip>
-        </Space>
+    <div className="ol-page-body">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+        <PageHeader
+          icon={<AlertOutlined />}
+          title="Threat Intelligence"
+          subtitle="Real-time threat intelligence and analysis"
+          actions={
+            <Space>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setFeedFormVisible(true)}>
+                Add Feed
+              </Button>
+              <Button icon={<SyncOutlined spin={isLoading} />} onClick={refreshAll} loading={isLoading}>
+                Refresh
+              </Button>
+              <LivePill connected={isConnected} />
+            </Space>
+          }
+        />
       </motion.div>
 
       {/* Stats Overview */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <DatabaseOutlined style={{ marginRight: 8 }} />
-              Feeds
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0' }}>
-              {totalFeeds}
-            </Title>
-            <Text type="secondary">
-              {activeFeeds} active
-            </Text>
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <SafetyOutlined style={{ marginRight: 8 }} />
-              IOCs
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0' }}>
-              {totalIOCs.toLocaleString()}
-            </Title>
-            <Text type="secondary">
-              <Tag color="red">{criticalIOCs} critical</Tag>
-              <Tag color="orange" style={{ marginLeft: 4 }}>{highIOCs} high</Tag>
-            </Text>
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <BellOutlined style={{ marginRight: 8 }} />
-              Alerts
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0' }}>
-              {totalAlerts}
-            </Title>
-            <Text type="secondary">
-              {activeAlerts} active
-            </Text>
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <FireOutlined style={{ marginRight: 8 }} />
-              Threats
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0' }}>
-              {rules.length}
-            </Title>
-            <Text type="secondary">
-              rules loaded
-            </Text>
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <GlobalOutlined style={{ marginRight: 8 }} />
-              Coverage
-            </Title>
-            <Pie
-              data={feedTypeData}
-              angleField="count"
-              colorField="type"
-              radius={0.8}
-              height={100}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <div className="ol-row-split">
+        <div className="ol-stats-grid-md">
+          <StatCard
+            label="Feeds"
+            value={totalFeeds}
+            subLabel={`${activeFeeds} active`}
+            icon={<DatabaseOutlined />}
+            accent="primary"
+          />
+          <StatCard
+            label="IOCs"
+            value={totalIOCs.toLocaleString()}
+            icon={<SafetyOutlined />}
+            accent="warning"
+            minHeight={132}
+            footer={
+              <Space size={4}>
+                <Tag color="red">{criticalIOCs} critical</Tag>
+                <Tag color="orange">{highIOCs} high</Tag>
+              </Space>
+            }
+          />
+          <StatCard
+            label="Alerts"
+            value={totalAlerts}
+            subLabel={`${activeAlerts} active`}
+            icon={<BellOutlined />}
+            accent="error"
+          />
+          <StatCard
+            label="Threats"
+            value={rules.length}
+            subLabel="rules loaded"
+            icon={<FireOutlined />}
+            accent="purple"
+          />
+        </div>
+        <Card className="ol-dial-card" title={<Space><GlobalOutlined />Coverage</Space>}>
+          <Pie
+            data={feedTypeData}
+            angleField="count"
+            colorField="type"
+            radius={0.8}
+            height={100}
+          />
+        </Card>
+      </div>
 
       {/* Error Alert */}
       {hasError && (
@@ -545,6 +548,7 @@ const ThreatIntelligence: React.FC = () => {
                       dataSource={feeds}
                       rowKey="id"
                       pagination={{ pageSize: 10 }}
+                      scroll={{ x: 1120 }}
                     />
                   </Space>
                 </Spin>
@@ -605,35 +609,55 @@ const ThreatIntelligence: React.FC = () => {
                       </Col>
                     </Row>
                     
-                    <Row gutter={16} style={{ marginBottom: 16 }}>
-                      <Col span={12}>
-                        <Card size="small" title="IOC Types">
-                          <Bar
-                            data={iocTypeData}
-                            xField="type"
-                            yField="count"
-                            height={200}
-                          />
-                        </Card>
-                      </Col>
-                      <Col span={12}>
-                        <Card size="small" title="Severity Distribution">
-                          <Pie
-                            data={severityData}
-                            angleField="count"
-                            colorField="severity"
-                            radius={0.8}
-                            height={200}
-                          />
-                        </Card>
-                      </Col>
-                    </Row>
-                    
+                    <div className="ol-row-2up">
+                      <Card size="small" title="IOC Types">
+                        <BarList
+                          items={iocTypeData.map((d) => ({
+                            key: d.type,
+                            label: (d.type ?? 'unknown').toUpperCase(),
+                            value: d.count,
+                            color: getIOCTypeColor(d.type),
+                          }))}
+                        />
+                      </Card>
+                      <Card size="small" title="Severity Distribution">
+                        <Pie
+                          data={severityData}
+                          angleField="count"
+                          colorField="severity"
+                          radius={0.8}
+                          height={200}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                          {severityData.map((d) => (
+                            <div key={d.severity} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                              <span
+                                style={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: '50%',
+                                  background: getSeverityColor(d.severity),
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <span style={{ flex: 1, color: 'var(--text-color-secondary)', textTransform: 'capitalize' }}>
+                                {d.severity}
+                              </span>
+                              <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-color)' }}>
+                                {d.count}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+                    </div>
+
                     <Table
                       columns={iocColumns}
                       dataSource={iocs}
                       rowKey="id"
                       pagination={{ pageSize: 20 }}
+                      scroll={{ x: 1120 }}
                     />
                   </Space>
                 </Spin>
@@ -675,6 +699,7 @@ const ThreatIntelligence: React.FC = () => {
                       dataSource={alerts}
                       rowKey="id"
                       pagination={{ pageSize: 10 }}
+                      scroll={{ x: 1000 }}
                     />
                   </Space>
                 </Spin>
@@ -685,35 +710,43 @@ const ThreatIntelligence: React.FC = () => {
               label: 'Analysis',
               icon: <ThunderboltOutlined />,
               children: (
-                <Card>
-                  <Title level={4}>Threat Analysis Tools</Title>
-                  <Paragraph>
-                    Advanced threat analysis using AI/ML and correlation engines.
-                  </Paragraph>
-                  
-                  <Space direction="vertical">
-                    <Card title="IOC Enrichment">
+                <div className="ol-page-body">
+                  <div>
+                    <Title level={4} style={{ margin: 0 }}>Threat Analysis Tools</Title>
+                    <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>
+                      Advanced threat analysis using AI/ML and correlation engines.
+                    </Paragraph>
+                  </div>
+
+                  <div className="ol-row-2up">
+                    <Card className="ol-subcard" title="IOC Enrichment">
                       <Text>
                         Enrich IOCs with additional context from threat intelligence feeds.
                       </Text>
-                      <Button type="primary" style={{ marginTop: 16 }} icon={<ThunderboltOutlined />}>
-                        Enrich Selected IOCs
-                      </Button>
+                      <div>
+                        <Button type="primary" style={{ marginTop: 16 }} icon={<ThunderboltOutlined />}>
+                          Enrich Selected IOCs
+                        </Button>
+                      </div>
                     </Card>
-                    
-                    <Card title="IOC Correlation">
+
+                    <Card className="ol-subcard" title="IOC Correlation">
                       <Text>
                         Find relationships between IOCs to identify attack patterns.
                       </Text>
-                      <Button type="primary" style={{ marginTop: 16 }} icon={<ShareAltOutlined />}>
-                        Correlate IOCs
-                      </Button>
+                      <div>
+                        <Button type="primary" style={{ marginTop: 16 }} icon={<ShareAltOutlined />}>
+                          Correlate IOCs
+                        </Button>
+                      </div>
                     </Card>
-                    
-                    <Card title="STIX Import/Export">
-                      <Text>
-                        Import and export threat intelligence in STIX format for interoperability.
-                      </Text>
+                  </div>
+
+                  <Card className="ol-subcard" title="STIX Import/Export">
+                    <Text>
+                      Import and export threat intelligence in STIX format for interoperability.
+                    </Text>
+                    <div>
                       <Space style={{ marginTop: 16 }}>
                         <Button type="primary" icon={<ImportOutlined />} onClick={() => message.info('STIX import coming soon')}>
                           Import STIX
@@ -722,9 +755,9 @@ const ThreatIntelligence: React.FC = () => {
                           Export STIX
                         </Button>
                       </Space>
-                    </Card>
-                  </Space>
-                </Card>
+                    </div>
+                  </Card>
+                </div>
               ),
             },
             {
@@ -746,23 +779,31 @@ const ThreatIntelligence: React.FC = () => {
                     <List
                       dataSource={rules}
                       renderItem={(rule: any) => (
-                        <List.Item>
-                          <Card>
-                            <Row justify="space-between">
-                              <Col flex="auto">
-                                <Title level={5}>{rule.name || rule.id}</Title>
-                                <Text type="secondary">{rule.description}</Text>
-                              </Col>
-                              <Col>
-                                <Space>
-                                  <Tag color={rule.enabled ? 'green' : 'red'}>
-                                    {rule.enabled ? 'Enabled' : 'Disabled'}
-                                  </Tag>
-                                  <Button type="link" size="small" icon={<EditOutlined />} />
-                                  <Button type="link" size="small" icon={<DeleteOutlined />} danger />
-                                </Space>
-                              </Col>
-                            </Row>
+                        <List.Item style={{ padding: '0 0 12px', border: 'none' }}>
+                          <Card className="ol-subcard" style={{ width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-color)' }}>
+                                  {rule.name || rule.id}
+                                </div>
+                                {rule.description && (
+                                  <div style={{ fontSize: 13, color: 'var(--text-color-tertiary)', marginTop: 4 }}>
+                                    {rule.description}
+                                  </div>
+                                )}
+                              </div>
+                              <Space size={4} style={{ flexShrink: 0 }}>
+                                <Tag color={rule.enabled ? 'green' : 'red'}>
+                                  {rule.enabled ? 'Enabled' : 'Disabled'}
+                                </Tag>
+                                <button type="button" className="ol-icon-btn">
+                                  <EditOutlined />
+                                </button>
+                                <button type="button" className="ol-icon-btn">
+                                  <DeleteOutlined />
+                                </button>
+                              </Space>
+                            </div>
                           </Card>
                         </List.Item>
                       )}

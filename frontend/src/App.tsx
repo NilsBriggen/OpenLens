@@ -1,6 +1,6 @@
-import React, { Suspense, useState, useEffect } from 'react';
+import React, { Suspense, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { FloatButton, Badge, theme } from 'antd';
+import { FloatButton, Badge } from 'antd';
 import { RobotOutlined, BellOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import Cookies from 'js-cookie';
 
@@ -17,6 +17,7 @@ import ProtectedRoute from './components/common/ProtectedRoute';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import AIChatAssistant from './components/AIChatAssistant';
 import NotificationCenter from './components/NotificationCenter';
+import { useAlerts } from './hooks/useApi';
 
 // Pages - Lazy loaded for performance
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -65,16 +66,16 @@ const PageTracker: React.FC<PageTrackerProps> = ({ children }) => {
 const AppContent: React.FC = () => {
   const [aiAssistantVisible, setAiAssistantVisible] = useState(false);
   const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const location = useLocation();
-
-  // Check for notifications on route change
-  useEffect(() => {
-    // In production, this would fetch from the API
-    // For now, we'll use a mock value
-    const mockNotifications = Math.floor(Math.random() * 10);
-    setUnreadNotifications(mockNotifications);
-  }, [location.pathname]);
+  // Same query MainLayout's header bell reads - React Query dedupes the
+  // request, so the two badges can never disagree the way a hard-coded
+  // count and a Math.random() mock used to. Gated on auth since AppContent
+  // also renders for the public /login and /register routes.
+  const { data: activeAlerts } = useAlerts(
+    { status: 'active' },
+    { enabled: !!Cookies.get('access_token') }
+  );
+  const unreadNotifications = activeAlerts?.length ?? 0;
 
   return (
     <>

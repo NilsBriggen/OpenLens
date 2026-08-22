@@ -228,9 +228,11 @@ async def log_audit_event(event: AuditLogRequest, current_user: dict = Depends(g
 @router.get("/audit")
 async def get_audit_logs(limit: int = 100, current_user: dict = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """Get audit logs"""
+    from backend.api.schemas import AuditEventOut
     _require(current_user, "security", "manage")
 
-    return [event.to_dict() for event in audit_logger.get_recent_events(limit)]
+    return [AuditEventOut.model_validate(event).model_dump(by_alias=True)
+            for event in audit_logger.get_recent_events(limit)]
 
 
 # Encryption

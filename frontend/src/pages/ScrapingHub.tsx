@@ -19,10 +19,12 @@ import {
   FilterOutlined,
   DatabaseOutlined,
   CodeOutlined,
-  ShareAltOutlined
+  ShareAltOutlined,
+  TeamOutlined,
+  PictureOutlined
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { Line, Bar, Pie } from '@ant-design/plots';
+import { Line, Pie } from '@ant-design/plots';
 import {
   useScrapeJobs,
   useCreateScrapeJob,
@@ -38,8 +40,13 @@ import {
   useWebSocket
 } from '../hooks/useApi';
 import { useDebounce, useLocalStorage } from '../hooks/useApi';
+import { useWebSocket as useWebSocketContext } from '../contexts/WebSocketContext';
 import type { ScrapeJob } from '../types/api';
 import { exportToCSV, exportToJSON } from '../utils/exportUtils';
+import StatCard from '../components/common/StatCard';
+import PageHeader from '../components/common/PageHeader';
+import LivePill from '../components/common/LivePill';
+import BarList from '../components/common/BarList';
 
 const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
@@ -69,7 +76,7 @@ interface ScrapeResult {
 
 const ScrapingHub: React.FC = () => {
   // State
-  const [activeTab, setActiveTab] = useState('jobs');
+  const { value: activeTab, setValue: setActiveTab } = useLocalStorage('scraping-active-tab', 'jobs');
   const [jobFormVisible, setJobFormVisible] = useState(false);
   const [jobDetailVisible, setJobDetailVisible] = useState(false);
   const [proxyFormVisible, setProxyFormVisible] = useState(false);
@@ -120,7 +127,7 @@ const ScrapingHub: React.FC = () => {
   const instagramHashtagMutation = useScrapeInstagramHashtag();
   
   // WebSocket for real-time updates
-  const { isConnected, messages } = useWebSocket(
+  useWebSocket(
     '/api/ws/scraping',
     (data) => {
       if (data.type === 'job_update') {
@@ -129,6 +136,7 @@ const ScrapingHub: React.FC = () => {
       }
     }
   );
+  const { isConnected } = useWebSocketContext();
   
   // Refresh all
   const refreshAll = useCallback(() => {
@@ -171,17 +179,42 @@ const ScrapingHub: React.FC = () => {
   }, [vkUserMutation]);
   
   // Helper functions
-  const getStatusTag = (status: string) => {
-    const colors = {
-      queued: 'default',
-      running: 'processing',
-      paused: 'warning',
-      completed: 'success',
-      failed: 'error',
-      cancelled: 'default',
-    };
-    return <Tag color={colors[status as keyof typeof colors] || 'default'}>{status}</Tag>;
+  const statusColors = {
+    queued: 'default',
+    running: 'processing',
+    paused: 'warning',
+    completed: 'success',
+    failed: 'error',
+    cancelled: 'default',
   };
+
+  const statusColorVars: Record<string, string> = {
+    queued: 'var(--text-color-secondary)',
+    running: 'var(--primary-color)',
+    paused: 'var(--warning-color)',
+    completed: 'var(--success-color)',
+    failed: 'var(--error-color)',
+    cancelled: 'var(--text-color-secondary)',
+  };
+
+  const getStatusTag = (status: string) => (
+    <Tag color={statusColors[status as keyof typeof statusColors] || 'default'}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        {status === 'running' && (
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: statusColorVars.running,
+              animation: 'olPulse 2s infinite',
+            }}
+          />
+        )}
+        {status}
+      </span>
+    </Tag>
+  );
 
   const getJobTypeColor = (type: string) => {
     const colors = {
@@ -196,9 +229,9 @@ const ScrapingHub: React.FC = () => {
 
   const getJobTypeIcon = (type: string) => {
     const icons: Record<string, React.ReactNode> = {
-      vk: 'VK',
-      twitter: '🐦',
-      instagram: '📷',
+      vk: <TeamOutlined />,
+      twitter: <ShareAltOutlined />,
+      instagram: <PictureOutlined />,
       web: <GlobalOutlined />,
       custom: <CodeOutlined />,
     };
@@ -281,7 +314,8 @@ const ScrapingHub: React.FC = () => {
   const jobTypeData = React.useMemo(() => {
     const counts: Record<string, number> = {};
     jobs.forEach(j => {
-      counts[j.status] = (counts[j.status] || 0) + 1;
+      const type = j.jobType ?? 'web';
+      counts[type] = (counts[type] || 0) + 1;
     });
     return Object.entries(counts).map(([type, count]) => ({ type, count }));
   }, [jobs]);
@@ -300,100 +334,67 @@ const ScrapingHub: React.FC = () => {
   const hasError = jobsError;
   
   return (
-    <div className="scraping-hub-page">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="page-header">
-        <div>
-          <Title level={1}><Space><DatabaseOutlined />Scraping Hub</Space></Title>
-          <Paragraph type="secondary">Distributed web scraping and data extraction</Paragraph>
-        </div>
-        <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setJobFormVisible(true)}>
-            New Job
-          </Button>
-          <Button icon={<SyncOutlined spin={isLoading} />} onClick={refreshAll} loading={isLoading}>
-            Refresh
-          </Button>
-          <Tooltip title="WebSocket status">
-            <Tag color={isConnected ? 'green' : 'red'}>
-              {isConnected ? 'Live' : 'Disconnected'}
-            </Tag>
-          </Tooltip>
-        </Space>
+    <div className="ol-page-body">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+        <PageHeader
+          icon={<DatabaseOutlined />}
+          title="Scraping Hub"
+          subtitle="Distributed web scraping and data extraction"
+          actions={
+            <Space>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setJobFormVisible(true)}>
+                New Job
+              </Button>
+              <Button icon={<SyncOutlined spin={isLoading} />} onClick={refreshAll} loading={isLoading}>
+                Refresh
+              </Button>
+              <LivePill connected={isConnected} />
+            </Space>
+          }
+        />
       </motion.div>
 
       {/* Stats Overview */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <CodeOutlined style={{ marginRight: 8 }} />
-              Total Jobs
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0' }}>
-              {totalJobs}
-            </Title>
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <PlayCircleOutlined style={{ marginRight: 8 }} />
-              Running
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0', color: '#1890ff' }}>
-              {runningJobs}
-            </Title>
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <CheckCircleOutlined style={{ marginRight: 8 }} />
-              Completed
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0', color: '#52c41a' }}>
-              {completedJobs}
-            </Title>
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <CloseCircleOutlined style={{ marginRight: 8 }} />
-              Failed
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0', color: '#f5222d' }}>
-              {failedJobs}
-            </Title>
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <ClockCircleOutlined style={{ marginRight: 8 }} />
-              Queued
-            </Title>
-            <Title level={2} style={{ margin: '16px 0 0', color: '#faad14' }}>
-              {queuedJobs}
-            </Title>
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <Title level={4} style={{ margin: 0 }}>
-              <GlobalOutlined style={{ marginRight: 8 }} />
-              Job Types
-            </Title>
+      <div className="ol-row-split">
+        <div className="ol-stats-grid-sm">
+          <StatCard label="Total Jobs" value={totalJobs} icon={<CodeOutlined />} accent="neutral" dense />
+          <StatCard label="Running" value={runningJobs} icon={<PlayCircleOutlined />} accent="primary" dense />
+          <StatCard label="Completed" value={completedJobs} icon={<CheckCircleOutlined />} accent="success" dense />
+          <StatCard label="Failed" value={failedJobs} icon={<CloseCircleOutlined />} accent="error" dense />
+          <StatCard label="Queued" value={queuedJobs} icon={<ClockCircleOutlined />} accent="warning" dense />
+        </div>
+        <Card title="Job Types">
+          <div className="ol-dial-card">
             <Pie
               data={jobTypeData}
               angleField="count"
               colorField="type"
               radius={0.8}
-              height={100}
+              innerRadius={0.6}
+              height={140}
+              legend={false}
+              color={(datum: any) => getJobTypeColor(datum.type)}
             />
-          </Card>
-        </Col>
-      </Row>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {jobTypeData.map((d) => (
+                <div key={d.type} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: getJobTypeColor(d.type),
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ color: 'var(--text-color-secondary)', textTransform: 'capitalize' }}>{d.type}</span>
+                  <span style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--text-color)' }}>{d.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
 
       {/* Error Alert */}
       {hasError && (
@@ -403,7 +404,6 @@ const ScrapingHub: React.FC = () => {
           type="error"
           showIcon
           closable
-          style={{ marginBottom: 16 }}
         />
       )}
 
@@ -419,13 +419,13 @@ const ScrapingHub: React.FC = () => {
               icon: <DatabaseOutlined />,
               children: (
                 <Spin spinning={jobsLoading}>
-                  <Space direction="vertical" size="middle">
-                    <Row justify="space-between">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <Row justify="space-between" align="middle">
                       <Col>
-                        <Title level={4}>Scrape Jobs ({jobs.length})</Title>
+                        <Title level={4} style={{ margin: 0 }}>Scrape Jobs ({jobs.length})</Title>
                       </Col>
                       <Col>
-                        <Space>
+                        <Space wrap>
                           <Input
                             placeholder="Search jobs..."
                             prefix={<SearchOutlined />}
@@ -464,36 +464,35 @@ const ScrapingHub: React.FC = () => {
                         </Space>
                       </Col>
                     </Row>
-                    
-                    <Row gutter={16} style={{ marginBottom: 16 }}>
-                      <Col span={12}>
-                        <Card size="small" title="Job Status Distribution">
-                          <Bar
-                            data={statusData}
-                            xField="status"
-                            yField="count"
-                            height={200}
-                          />
-                        </Card>
-                      </Col>
-                      <Col span={12}>
-                        <Card size="small" title="Success Rate">
-                          <Progress
-                            type="dashboard"
-                            percent={totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0}
-                            format={(percent) => `${percent?.toFixed(0)}%`}
-                          />
-                        </Card>
-                      </Col>
-                    </Row>
-                    
+
+                    <div className="ol-row-2up">
+                      <Card size="small" title="Job Status Distribution">
+                        <BarList
+                          items={statusData.map((d) => ({
+                            key: d.status,
+                            label: d.status.charAt(0).toUpperCase() + d.status.slice(1),
+                            value: d.count,
+                            color: statusColorVars[d.status] ?? 'var(--primary-color)',
+                          }))}
+                        />
+                      </Card>
+                      <Card size="small" title="Success Rate">
+                        <Progress
+                          type="dashboard"
+                          percent={totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0}
+                          format={(percent) => `${percent?.toFixed(0)}%`}
+                        />
+                      </Card>
+                    </div>
+
                     <Table
                       columns={jobColumns}
                       dataSource={jobs}
                       rowKey="id"
                       pagination={{ pageSize: 20 }}
+                      scroll={{ x: 1120 }}
                     />
-                  </Space>
+                  </div>
                 </Spin>
               ),
             },
@@ -502,68 +501,68 @@ const ScrapingHub: React.FC = () => {
               label: 'Platforms',
               icon: <GlobalOutlined />,
               children: (
-                <Card>
-                  <Title level={4}>Platform-Specific Scraping</Title>
-                  <Paragraph>
-                    Launch targeted scraping jobs for specific platforms.
-                  </Paragraph>
-                  
-                  <Space direction="vertical">
-                    <Card title="VK (VKontakte)">
-                      <Text>
-                        Scrape VK user profiles, posts, and communities.
-                      </Text>
-                      <Space style={{ marginTop: 16 }}>
-                        <Input placeholder="User ID or username" style={{ width: 200 }} />
-                        <Button type="primary" onClick={() => scrapeVkUser('user123')}>
-                          Scrape User
-                        </Button>
-                        <Button onClick={() => vkPostsMutation.mutateAsync({ user_id: 'user123', limit: 10 })}>
-                          Scrape Posts
-                        </Button>
-                        <Button onClick={() => vkSearchMutation.mutateAsync({ query: 'test', limit: 10 })}>
-                          Search
-                        </Button>
-                      </Space>
-                    </Card>
-                    
-                    <Card title="Twitter">
-                      <Text>
-                        Scrape Twitter tweets, user profiles, and trends.
-                      </Text>
-                      <Space style={{ marginTop: 16 }}>
-                        <Input placeholder="Username or query" style={{ width: 200 }} />
-                        <Button type="primary" onClick={() => twitterUserMutation.mutateAsync({ username: 'twitteruser' })}>
-                          Scrape User
-                        </Button>
-                        <Button onClick={() => twitterTweetsMutation.mutateAsync({ query: 'test', limit: 10 })}>
-                          Scrape Tweets
-                        </Button>
-                        <Button onClick={() => twitterTrendsMutation.mutateAsync()}>
-                          Get Trends
-                        </Button>
-                      </Space>
-                    </Card>
-                    
-                    <Card title="Instagram">
-                      <Text>
-                        Scrape Instagram user profiles, posts, and hashtags.
-                      </Text>
-                      <Space style={{ marginTop: 16 }}>
-                        <Input placeholder="Username or hashtag" style={{ width: 200 }} />
-                        <Button type="primary" onClick={() => instagramUserMutation.mutateAsync({ username: 'instauser' })}>
-                          Scrape User
-                        </Button>
-                        <Button onClick={() => instagramPostsMutation.mutateAsync({ username: 'instauser', limit: 10 })}>
-                          Scrape Posts
-                        </Button>
-                        <Button onClick={() => instagramHashtagMutation.mutateAsync({ hashtag: 'test', limit: 10 })}>
-                          Scrape Hashtag
-                        </Button>
-                      </Space>
-                    </Card>
-                  </Space>
-                </Card>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div>
+                    <Title level={4} style={{ margin: 0 }}>Platform-Specific Scraping</Title>
+                    <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>
+                      Launch targeted scraping jobs for specific platforms.
+                    </Paragraph>
+                  </div>
+
+                  <Card className="ol-subcard" title="VK (VKontakte)">
+                    <Text type="secondary">
+                      Scrape VK user profiles, posts, and communities.
+                    </Text>
+                    <Space style={{ marginTop: 16 }} wrap>
+                      <Input placeholder="User ID or username" style={{ width: 220 }} />
+                      <Button type="primary" onClick={() => scrapeVkUser('user123')}>
+                        Scrape User
+                      </Button>
+                      <Button onClick={() => vkPostsMutation.mutateAsync({ user_id: 'user123', limit: 10 })}>
+                        Scrape Posts
+                      </Button>
+                      <Button onClick={() => vkSearchMutation.mutateAsync({ query: 'test', limit: 10 })}>
+                        Search
+                      </Button>
+                    </Space>
+                  </Card>
+
+                  <Card className="ol-subcard" title="Twitter">
+                    <Text type="secondary">
+                      Scrape Twitter tweets, user profiles, and trends.
+                    </Text>
+                    <Space style={{ marginTop: 16 }} wrap>
+                      <Input placeholder="Username or query" style={{ width: 220 }} />
+                      <Button type="primary" onClick={() => twitterUserMutation.mutateAsync({ username: 'twitteruser' })}>
+                        Scrape User
+                      </Button>
+                      <Button onClick={() => twitterTweetsMutation.mutateAsync({ query: 'test', limit: 10 })}>
+                        Scrape Tweets
+                      </Button>
+                      <Button onClick={() => twitterTrendsMutation.mutateAsync()}>
+                        Get Trends
+                      </Button>
+                    </Space>
+                  </Card>
+
+                  <Card className="ol-subcard" title="Instagram">
+                    <Text type="secondary">
+                      Scrape Instagram user profiles, posts, and hashtags.
+                    </Text>
+                    <Space style={{ marginTop: 16 }} wrap>
+                      <Input placeholder="Username or hashtag" style={{ width: 220 }} />
+                      <Button type="primary" onClick={() => instagramUserMutation.mutateAsync({ username: 'instauser' })}>
+                        Scrape User
+                      </Button>
+                      <Button onClick={() => instagramPostsMutation.mutateAsync({ username: 'instauser', limit: 10 })}>
+                        Scrape Posts
+                      </Button>
+                      <Button onClick={() => instagramHashtagMutation.mutateAsync({ hashtag: 'test', limit: 10 })}>
+                        Scrape Hashtag
+                      </Button>
+                    </Space>
+                  </Card>
+                </div>
               ),
             },
             {
@@ -571,22 +570,19 @@ const ScrapingHub: React.FC = () => {
               label: 'Proxies',
               icon: <ShareAltOutlined />,
               children: (
-                <Card>
-                  <Row justify="space-between">
-                    <Col>
-                      <Title level={4}>Proxy Servers</Title>
-                    </Col>
-                    <Col>
-                      <Button type="primary" icon={<PlusOutlined />} onClick={() => setProxyFormVisible(true)}>
-                        Add Proxy
-                      </Button>
-                    </Col>
-                  </Row>
-                  
-                  <Paragraph type="secondary">
-                    Configure proxy servers for distributed scraping and rate limit avoidance.
-                  </Paragraph>
-                  
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                    <div>
+                      <Title level={4} style={{ margin: 0 }}>Proxy Servers</Title>
+                      <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>
+                        Configure proxy servers for distributed scraping and rate limit avoidance.
+                      </Paragraph>
+                    </div>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={() => setProxyFormVisible(true)}>
+                      Add Proxy
+                    </Button>
+                  </div>
+
                   <List
                     dataSource={[
                       { id: '1', host: 'proxy1.example.com', port: 8080, protocol: 'http', status: 'active', location: 'US', speed: 150 },
@@ -594,28 +590,41 @@ const ScrapingHub: React.FC = () => {
                       { id: '3', host: 'proxy3.example.com', port: 8080, protocol: 'socks5', status: 'inactive', location: 'ASIA', speed: 100 },
                     ]}
                     renderItem={(proxy: any) => (
-                      <List.Item>
-                        <Card>
-                          <Row justify="space-between">
-                            <Col flex="auto">
-                              <Title level={5}>{proxy.protocol}://{proxy.host}:{proxy.port}</Title>
-                              <Text type="secondary">{proxy.location} - {proxy.speed}ms</Text>
-                            </Col>
-                            <Col>
-                              <Space>
-                                <Tag color={proxy.status === 'active' ? 'green' : 'red'}>
-                                  {proxy.status}
-                                </Tag>
-                                <Button type="link" size="small" icon={<EditOutlined />} />
-                                <Button type="link" size="small" icon={<DeleteOutlined />} danger />
-                              </Space>
-                            </Col>
-                          </Row>
-                        </Card>
+                      <List.Item
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '16px 0',
+                          borderBottom: '1px solid var(--border-color-secondary)',
+                        }}
+                      >
+                        <div>
+                          <div
+                            className="ol-mono"
+                            style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-color)' }}
+                          >
+                            {proxy.protocol}://{proxy.host}:{proxy.port}
+                          </div>
+                          <div style={{ fontSize: 13, color: 'var(--text-color-secondary)', marginTop: 4 }}>
+                            {proxy.location} · {proxy.speed}ms
+                          </div>
+                        </div>
+                        <Space size={8}>
+                          <Tag color={proxy.status === 'active' ? 'green' : 'red'}>
+                            {proxy.status}
+                          </Tag>
+                          <button type="button" className="ol-icon-btn" aria-label="Edit proxy">
+                            <EditOutlined />
+                          </button>
+                          <button type="button" className="ol-icon-btn" aria-label="Delete proxy">
+                            <DeleteOutlined />
+                          </button>
+                        </Space>
                       </List.Item>
                     )}
                   />
-                </Card>
+                </div>
               ),
             },
             {
@@ -623,65 +632,77 @@ const ScrapingHub: React.FC = () => {
               label: 'Settings',
               icon: <SettingOutlined />,
               children: (
-                <Card>
-                  <Title level={4}>Scraping Settings</Title>
-                  
-                  <Space direction="vertical">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <Title level={4} style={{ margin: 0 }}>Scraping Settings</Title>
+
+                  <div className="ol-row-2up">
                     <Card title="Rate Limiting">
-                      <Text>
+                      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
                         Configure rate limits to avoid detection and respect website policies.
-                      </Text>
-                      <Row gutter={16} style={{ marginTop: 16 }}>
+                      </Paragraph>
+                      <Row gutter={16}>
                         <Col span={12}>
-                          <Text strong>Requests per minute:</Text>
-                          <Input type="number" defaultValue={60} style={{ width: '100%' }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: 600 }}>Requests per minute</Text>
+                            <Input type="number" defaultValue={60} style={{ width: '100%' }} />
+                          </div>
                         </Col>
                         <Col span={12}>
-                          <Text strong>Delay between requests (ms):</Text>
-                          <Input type="number" defaultValue={1000} style={{ width: '100%' }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: 600 }}>Delay between requests (ms)</Text>
+                            <Input type="number" defaultValue={1000} style={{ width: '100%' }} />
+                          </div>
                         </Col>
                       </Row>
                     </Card>
-                    
+
                     <Card title="Caching">
-                      <Text>
+                      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
                         Enable caching to avoid re-scraping the same content.
-                      </Text>
-                      <Row gutter={16} style={{ marginTop: 16 }}>
+                      </Paragraph>
+                      <Row gutter={16}>
                         <Col span={12}>
-                          <Text strong>Enable caching:</Text>
-                          <Select defaultValue="true" style={{ width: '100%' }}>
-                            <Option value="true">Enabled</Option>
-                            <Option value="false">Disabled</Option>
-                          </Select>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: 600 }}>Enable caching</Text>
+                            <Select defaultValue="true" style={{ width: '100%' }}>
+                              <Option value="true">Enabled</Option>
+                              <Option value="false">Disabled</Option>
+                            </Select>
+                          </div>
                         </Col>
                         <Col span={12}>
-                          <Text strong>Cache expiration (hours):</Text>
-                          <Input type="number" defaultValue={24} style={{ width: '100%' }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: 600 }}>Cache expiration (hours)</Text>
+                            <Input type="number" defaultValue={24} style={{ width: '100%' }} />
+                          </div>
                         </Col>
                       </Row>
                     </Card>
-                    
+
                     <Card title="JavaScript Rendering">
-                      <Text>
+                      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
                         Enable JavaScript rendering for dynamic content (slower but more accurate).
-                      </Text>
-                      <Row gutter={16} style={{ marginTop: 16 }}>
+                      </Paragraph>
+                      <Row gutter={16}>
                         <Col span={12}>
-                          <Text strong>Render JavaScript:</Text>
-                          <Select defaultValue="false" style={{ width: '100%' }}>
-                            <Option value="true">Enabled</Option>
-                            <Option value="false">Disabled</Option>
-                          </Select>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: 600 }}>Render JavaScript</Text>
+                            <Select defaultValue="false" style={{ width: '100%' }}>
+                              <Option value="true">Enabled</Option>
+                              <Option value="false">Disabled</Option>
+                            </Select>
+                          </div>
                         </Col>
                         <Col span={12}>
-                          <Text strong>Timeout (seconds):</Text>
-                          <Input type="number" defaultValue={30} style={{ width: '100%' }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: 600 }}>Timeout (seconds)</Text>
+                            <Input type="number" defaultValue={30} style={{ width: '100%' }} />
+                          </div>
                         </Col>
                       </Row>
                     </Card>
-                  </Space>
-                </Card>
+                  </div>
+                </div>
               ),
             },
           ]}
